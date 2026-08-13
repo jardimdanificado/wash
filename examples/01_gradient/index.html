@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wash API - Gradient</title>
+<style>
+  body { background: #222; color: white; font-family: sans-serif; text-align: center; }
+  canvas { border: 1px solid #555; margin-top: 20px; }
+</style>
+</head>
+<body>
+  <h1>Example 1: Simple Gradient</h1>
+  <p>Shows how to use the Wash.js API to render a simple image.</p>
+  <canvas id="canvas" width="400" height="300"></canvas>
+
+<script type="module">
+import { wash } from "../../wash.js";
+
+const canvas = document.querySelector("#canvas");
+const ctx = canvas.getContext("2d");
+const W = canvas.width, H = canvas.height;
+const SIZE = 8 + W * H * 4;
+
+// Initialize the Wash API
+const wasm = await wash("./gradient.wasm", SIZE);
+
+// Fill width and height using DataView
+wasm.view.setUint32(0, W, true);
+wasm.view.setUint32(4, H, true);
+
+// Run the C function
+wasm.run();
+
+// Extract pixels from Uint8Array and output to canvas
+const image = ctx.createImageData(W, H);
+image.data.set(wasm.u8.subarray(8));
+ctx.putImageData(image, 0, 0);
+</script>
+</body>
+</html>

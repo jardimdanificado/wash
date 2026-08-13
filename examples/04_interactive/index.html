@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wash API - Interactive Shader</title>
+<style>
+  body { background: #111; color: white; font-family: sans-serif; text-align: center; margin: 0; padding: 20px; }
+  canvas { border: 1px solid #333; margin-top: 20px; cursor: crosshair; }
+  p { max-width: 600px; margin: 0 auto; color: #aaa; }
+</style>
+</head>
+<body>
+  <h1>Example 4: Interactive Julia Fractal</h1>
+  <p>Move your mouse over the canvas to change the fractal parameters in real-time. The colors shift automatically based on the clock.</p>
+  <canvas id="canvas" width="800" height="600"></canvas>
+
+<script type="module">
+import { wash } from "../../wash.js";
+
+const canvas = document.querySelector("#canvas");
+const ctx = canvas.getContext("2d");
+const W = canvas.width, H = canvas.height;
+
+// Buffer size: 20 bytes of headers (W, H, Time, MouseX, MouseY) + pixels
+const SIZE = 20 + W * H * 4;
+
+const wasm = await wash("./main.wasm", SIZE);
+
+// Set static width and height
+wasm.view.setUint32(0, W, true);
+wasm.view.setUint32(4, H, true);
+
+const image = ctx.createImageData(W, H);
+
+let mouseX = 0.5;
+let mouseY = 0.5;
+
+canvas.addEventListener("mousemove", (e) => {
+    const rect = canvas.getBoundingClientRect();
+    mouseX = (e.clientX - rect.left) / rect.width;
+    mouseY = (e.clientY - rect.top) / rect.height;
+});
+
+function renderFrame(time) {
+    // Write dynamic inputs to memory
+    wasm.view.setFloat32(8, time, true);
+    wasm.view.setFloat32(12, mouseX, true);
+    wasm.view.setFloat32(16, mouseY, true);
+
+    // Crunch numbers
+    wasm.run();
+
+    // The pixels now start at offset 20
+    image.data.set(wasm.u8.subarray(20));
+    ctx.putImageData(image, 0, 0);
+
+    requestAnimationFrame(renderFrame);
+}
+
+// Start the loop
+requestAnimationFrame(renderFrame);
+</script>
+</body>
+</html>

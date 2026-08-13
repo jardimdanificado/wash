@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wash API - Imports</title>
+<style>
+  body { background: #222; color: white; font-family: sans-serif; text-align: center; }
+  canvas { border: 1px solid #555; margin-top: 20px; }
+</style>
+</head>
+<body>
+  <h1>Example 2: JS <-> WASM Interaction</h1>
+  <p>Shows how to pass JS functions (Math.random, console.log) to C through the Wash.js API.</p>
+  <p><em>Open the DevTools (F12) to see the console.log() calls sent by C!</em></p>
+  <canvas id="canvas" width="400" height="300"></canvas>
+
+<script type="module">
+import { wash } from "../../wash.js";
+
+const canvas = document.querySelector("#canvas");
+const ctx = canvas.getContext("2d");
+const W = canvas.width, H = canvas.height;
+const SIZE = 8 + W * H * 4;
+
+// Injection object. We pass these functions for WebAssembly to use.
+const env = {
+    console_log: (val) => console.log("C code just said: " + val),
+    get_random: () => Math.random()
+};
+
+// Pass the env object inside the Wash API imports
+const wasm = await wash("./imports.wasm", SIZE, { env });
+
+wasm.view.setUint32(0, W, true);
+wasm.view.setUint32(4, H, true);
+
+// When running, C will invoke callbacks back to JS (logs and random)!
+wasm.run();
+
+const image = ctx.createImageData(W, H);
+image.data.set(wasm.u8.subarray(8));
+ctx.putImageData(image, 0, 0);
+</script>
+</body>
+</html>

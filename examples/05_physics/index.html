@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wash API - Particle Physics</title>
+<style>
+  body { background: #111; color: white; font-family: sans-serif; text-align: center; margin: 0; padding: 20px; }
+  canvas { border: 1px solid #333; margin-top: 20px; cursor: none; }
+  p { max-width: 600px; margin: 0 auto; color: #aaa; }
+</style>
+</head>
+<body>
+  <h1>Example 5: Particle Physics Simulation</h1>
+  <p>This demonstrates that Wash is a general compute engine. The WASM maintains internal state (position and velocity of 20,000 particles). Move your mouse to attract them!</p>
+  <canvas id="canvas" width="800" height="600"></canvas>
+
+<script type="module">
+import { wash } from "../../wash.js";
+
+const canvas = document.querySelector("#canvas");
+const ctx = canvas.getContext("2d");
+const W = canvas.width, H = canvas.height;
+
+// Buffer size: 20 bytes headers + Pixels + 20000 Particles (28 bytes each)
+const NUM_PARTICLES = 20000;
+const SIZE = 20 + (W * H * 4) + (NUM_PARTICLES * 28);
+
+const wasm = await wash("./main.wasm", SIZE);
+
+wasm.view.setUint32(0, W, true);
+wasm.view.setUint32(4, H, true);
+
+const image = ctx.createImageData(W, H);
+
+let mouseX = 0.5;
+let mouseY = 0.5;
+
+canvas.addEventListener("mousemove", (e) => {
+    const rect = canvas.getBoundingClientRect();
+    mouseX = (e.clientX - rect.left) / rect.width;
+    mouseY = (e.clientY - rect.top) / rect.height;
+});
+
+function renderFrame(time) {
+    wasm.view.setFloat32(12, mouseX, true);
+    wasm.view.setFloat32(16, mouseY, true);
+
+    wasm.run();
+
+    image.data.set(wasm.u8.subarray(20, 20 + W * H * 4));
+    ctx.putImageData(image, 0, 0);
+
+    requestAnimationFrame(renderFrame);
+}
+
+requestAnimationFrame(renderFrame);
+</script>
+</body>
+</html>
