@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WASH ray tracing benchmark</title>
+<style>
+body{margin:0;background:#181818;color:#eee;font-family:system-ui,sans-serif;display:grid;place-items:center;min-height:100vh}
+main{text-align:center;width:min(900px,94vw)}
+canvas{width:100%;height:auto;border:1px solid #555;image-rendering:auto;background:#000}
+button{margin:12px 4px 0;padding:9px 15px;cursor:pointer}
+#stats{margin-top:12px;font-family:monospace;white-space:pre-wrap}
+</style>
+</head>
+<body>
+<main>
+<h1>WASH ray tracing benchmark</h1>
+<canvas id="canvas" width="800" height="600"></canvas>
+<div>
+<button id="wasm">Render with WASM</button>
+<button id="js">Render with JS</button>
+<button id="both">Run both</button>
+</div>
+<div id="stats">Loading WASM...</div>
+</main>
+<script type="module">
+import { wash } from "./wash.js";
+
+const canvas = document.querySelector("#canvas");
+const ctx = canvas.getContext("2d");
+const stats = document.querySelector("#stats");
+const W = canvas.width, H = canvas.height;
+const SIZE = 8 + W * H * 4;
+
+const wasm = await wash("./raytrace.wasm?v=" + Date.now(), SIZE);
+wasm.view.setUint32(0, W, true);
+wasm.view.setUint32(4, H, true);
+
+const image = ctx.createImageData(W, H);
+
+function renderWasm() {
+    const t0 = performance.now();
+    wasm.run();
+    const elapsed = performance.now() - t0;
+    image.data.set(wasm.u8.subarray(8));
+    ctx.putImageData(image, 0, 0);
+    stats.textContent = `WASM: ${elapsed.toFixed(3)} ms`;
+    return elapsed;
+}
+
+function renderJS() {
+    const pixels = image.data;
+    const aspect = W/H;
+
+    const lx = 2.0, ly = 4.0, lz = -1.0;
+    const cx = 0.0, cy = 0.5, cz = -2.5;
+
+    let out_mat = -1;
+
+    function map_d(px, py, pz) {
+        let d = py + 1.0;
+        out_mat = 1;
+
+        let tx = px, tz = pz - 4.0;
+        let lxz = Math.sqrt(tx*tx + tz*tz);
+        let qx = lxz - 1.2, qy = py;
+        let d_torus = Math.sqrt(qx*qx + qy*qy) - 0.4;
+        if (d_torus < d) { d = d_torus; out_mat = 2; }
+
+        let sx = px - 1.5, sy = py - 0.5, sz = pz - 3.0;
+        let d_sphere = Math.sqrt(sx*sx + sy*sy + sz*sz) - 0.7;
+        if (d_sphere < d) { d = d_sphere; out_mat = 3; }
+
+        return d;
+    }
+
+    function softshadow(rox, roy, roz, rdx, rdy, rdz, mint, maxt, k) {
+        let res = 1.0;
+        let t = mint;
+        for (let i = 0; i < 32 && t < maxt; i++) {
+            let h = map_d(rox + rdx*t, roy + rdy*t, roz + rdz*t);
+            if (h < 0.001) return 0.0;
+            let sh = k * h / t;
+            if (sh < res) res = sh;
+            t += h < 0.02 ? 0.02 : (h > 0.20 ? 0.20 : h);
+        }
+        return res < 0.0 ? 0.0 : (res > 1.0 ? 1.0 : res);
+    }
+
+    const t0 = performance.now();
+    for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+            const sx = (x + .5) / W * 2 - 1, sy = 1 - (y + .5) / H * 2;
+            let rdx = sx * aspect, rdy = sy, rdz = 1.5;
+            const rd_len = Math.sqrt(rdx*rdx + rdy*rdy + rdz*rdz);
+            rdx /= rd_len; rdy /= rd_len; rdz /= rd_len;
+
+            let t = 0.0;
+            let hit = false;
+            let mat = -1;
+            const MAX_T = 20.0;
+
+            for (let i = 0; i < 64; i++) {
+                let px = cx + rdx*t, py = cy + rdy*t, pz = cz + rdz*t;
+                let d = map_d(px, py, pz);
+                if (d < 0.001) { hit = true; mat = out_mat; break; }
+                t += d;
+                if (t > MAX_T) break;
+            }
+
+            let r = 0, g = 0, b = 0;
+            if (hit) {
+                let px = cx + rdx*t, py = cy + rdy*t, pz = cz + rdz*t;
+                
+                const e = 0.001;
+                let nx = map_d(px+e, py, pz) - map_d(px-e, py, pz);
+                let ny = map_d(px, py+e, pz) - map_d(px, py-e, pz);
+                let nz = map_d(px, py, pz+e) - map_d(px, py, pz-e);
+                const n_len = Math.sqrt(nx*nx + ny*ny + nz*nz);
+                if(n_len > 0.00001) { nx /= n_len; ny /= n_len; nz /= n_len; }
+                else { nx = 0; ny = 0; nz = 0; }
+                
+                let lvx = lx - px, lvy = ly - py, lvz = lz - pz;
+                const llen = Math.sqrt(lvx*lvx + lvy*lvy + lvz*lvz);
+                lvx /= llen; lvy /= llen; lvz /= llen;
+
+                let diffuse = nx*lvx + ny*lvy + nz*lvz;
+                if (diffuse < 0) diffuse = 0;
+
+                let shadow = softshadow(px + nx*0.01, py + ny*0.01, pz + nz*0.01, lvx, lvy, lvz, 0.02, 10.0, 8.0);
+                let ao = 1.0 - (t / MAX_T);
+                if (ao < 0) ao = 0;
+                
+                let lighting = 0.1 * ao + 0.9 * diffuse * shadow;
+
+                if (mat === 1) {
+                    const checker = (Math.trunc(px * 1.5) + Math.trunc(pz * 1.5)) & 1;
+                    const base = checker ? 0.2 : 0.4;
+                    r = base * lighting; g = base * lighting; b = (base * 1.1) * lighting;
+                } else if (mat === 2) {
+                    r = 0.9 * lighting; g = 0.2 * lighting; b = 0.1 * lighting;
+                } else if (mat === 3) {
+                    r = 0.1 * lighting; g = 0.6 * lighting; b = 0.9 * lighting;
+                }
+            } else {
+                let ty = 0.5 * (rdy + 1.0);
+                r = 0.05 + 0.10 * ty;
+                g = 0.10 + 0.20 * ty;
+                b = 0.20 + 0.40 * ty;
+            }
+
+            const o = (y * W + x) * 4;
+            r *= 255.0; g *= 255.0; b *= 255.0;
+            pixels[o]   = r < 0 ? 0 : (r > 255 ? 255 : r);
+            pixels[o+1] = g < 0 ? 0 : (g > 255 ? 255 : g);
+            pixels[o+2] = b < 0 ? 0 : (b > 255 ? 255 : b);
+            pixels[o+3] = 255;
+        }
+    }
+    const elapsed = performance.now() - t0;
+    ctx.putImageData(image, 0, 0);
+    stats.textContent = `JS: ${elapsed.toFixed(3)} ms`;
+    return elapsed;
+}
+
+wasm.onclick=renderWasm;
+js.onclick=renderJS;
+both.onclick=()=>{
+    const w=renderWasm();
+    const j=renderJS();
+    stats.textContent=`WASM: ${w.toFixed(3)} ms\nJS:   ${j.toFixed(3)} ms\nSpeedup: ${(j/w).toFixed(2)}x`;
+};
+
+renderWasm();
+</script>
+</body>
+</html>
