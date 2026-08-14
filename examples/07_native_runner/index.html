@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wash API - Native SDL2 Runner</title>
+<style>
+  body { background: #181818; color: #eee; font-family: system-ui, sans-serif; padding: 2rem; max-width: 800px; margin: 0 auto; line-height: 1.6; }
+  h1 { color: #66b3ff; }
+  pre { background: #222; border: 1px solid #444; border-radius: 6px; padding: 1rem; overflow-x: auto; color: #a5d6ff; }
+  code { font-family: monospace; }
+  .badge { background: #005fb8; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.85em; }
+</style>
+</head>
+<body>
+  <h1>Example 7: Native SDL2 Runner <span class="badge">Desktop / Non-Web</span></h1>
+  <p>This example demonstrates running the <strong>exact same compiled WASM shader binaries</strong> (such as <code>gradient.wasm</code>, <code>interactive/main.wasm</code>, <code>physics/main.wasm</code> or <code>raytrace.wasm</code>) inside a native desktop window using <strong>SDL2</strong> in C.</p>
+
+  <h2>How it Works</h2>
+  <ul>
+    <li>Initializes an <strong>SDL2 window, renderer, and streaming RGBA texture</strong>.</li>
+    <li>Loads the WASM shader via <a href="wash.h">wash.h</a> (using an embedded engine like Wasm3).</li>
+    <li>Main event loop reads mouse position, click states, and elapsed time (<code>SDL_GetTicks</code>) and writes them to the WASM memory buffer at the exact offsets expected by the shaders.</li>
+    <li>Calls <code>_start(heap_base)</code> every frame.</li>
+    <li>Streams the pixel buffer directly to <code>SDL_UpdateTexture</code> and renders at native monitor refresh rates with live FPS calculation.</li>
+  </ul>
+
+  <h2>Compilation & Running</h2>
+  <pre><code># 1. Compile the SDL2 runner
+cd examples/07_native_runner
+make wasm3
+
+# 2. Run any existing Wash WASM shader in a native window:
+./wash_sdl ../04_interactive/main.wasm 800 600
+./wash_sdl ../03_benchmark/raytrace.wasm 640 480
+./wash_sdl ../05_physics/main.wasm 800 600
+./wash_sdl ../01_gradient/gradient.wasm 800 600</code></pre>
+
+  <p><a href="../../index.html">&larr; Back to Examples</a></p>
+</body>
+</html>
