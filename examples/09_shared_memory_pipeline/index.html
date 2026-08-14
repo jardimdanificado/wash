@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wash API - Shared Memory Pipeline</title>
+<style>
+  body {
+    background: #141414;
+    color: #eee;
+    font-family: system-ui, sans-serif;
+    text-align: center;
+    margin: 0;
+    padding: 20px;
+  }
+  h1 { margin-bottom: 6px; }
+  p { max-width: 680px; margin: 0 auto 15px auto; color: #aaa; font-size: 0.95em; line-height: 1.5; }
+  .pipeline-diagram {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    margin: 15px auto;
+    max-width: 700px;
+    font-size: 0.85em;
+  }
+  .stage-box {
+    background: #222;
+    border: 1px solid #444;
+    border-radius: 8px;
+    padding: 10px 14px;
+    flex: 1;
+    text-align: left;
+  }
+  .stage-box h3 { margin: 0 0 4px 0; font-size: 1.05em; color: #66b3ff; }
+  .shared-mem-badge {
+    background: #005fb8;
+    color: white;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-weight: bold;
+    font-size: 0.9em;
+  }
+  canvas {
+    border: 1px solid #333;
+    border-radius: 8px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+    background: #050508;
+    cursor: crosshair;
+  }
+  .stats {
+    margin-top: 12px;
+    font-family: monospace;
+    color: #4ade80;
+    font-size: 1.1em;
+  }
+  .controls {
+    margin-top: 10px;
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+  }
+  button {
+    background: #2a2a2a;
+    color: #fff;
+    border: 1px solid #555;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+  }
+  button:hover { background: #3a3a3a; }
+</style>
+</head>
+<body>
+  <h1>Example 9: Shared Memory Multi-Shader Pipeline</h1>
+  <p>
+    Two completely decoupled C shaders cooperate on a single shared memory buffer using <b>typed argument passing</b> without any serialization overhead.
+  </p>
+
+  <div class="pipeline-diagram">
+    <div class="stage-box">
+      <h3>1. simulate.wasm</h3>
+      <p style="margin:0; color:#bbb;">Runs gravity & vortex physics on 8,000 particle structs in shared memory.</p>
+    </div>
+    <div class="shared-mem-badge">&harr; Shared Memory &harr;</div>
+    <div class="stage-box">
+      <h3>2. render.wasm</h3>
+      <p style="margin:0; color:#bbb;">Reads particles, applies trail decay & outputs RGBA pixels to canvas.</p>
+    </div>
+  </div>
+
+  <canvas id="canvas" width="600" height="400"></canvas>
+
+  <div class="stats">
+    FPS: <span id="fpsStat">0</span> | Particles: 8,000 | Memory: 1.12 MB
+  </div>
+
+  <div class="controls">
+    <button id="togglePhysics">Pause Physics</button>
+  </div>
+
+<script type="module">
+import { wash_memory, wash_load, wash_run } from "../../wash.js";
+
+const canvas = document.querySelector("#canvas");
+const ctx = canvas.getContext("2d");
+const W = canvas.width, H = canvas.height;
+const NUM_PARTICLES = 8000;
+
+// Memory Calculation:
+// - Particles: 8000 * 20 bytes = 160,000 bytes
+// - Pixels: 600 * 400 * 4 = 960,000 bytes
+// Total: ~1.12 MB
+const PARTICLE_BYTES = NUM_PARTICLES * 20;
+const PIXEL_BYTES = W * H * 4;
+const TOTAL_SIZE = PARTICLE_BYTES + PIXEL_BYTES;
+const PIXEL_OFFSET = PARTICLE_BYTES;
+
+// 1. Create a single shared memory buffer for all shaders in the pipeline!
+const sharedMem = wash_memory(TOTAL_SIZE);
+
+// Create dedicated sub-pointer objects pointing into the shared buffer:
+const particlesMem = { heapBase: sharedMem.heapBase, buffer: sharedMem.buffer };
+const pixelsMem    = { heapBase: sharedMem.heapBase + PIXEL_OFFSET, buffer: sharedMem.buffer };
+
+// 2. Load both completely distinct WASM shaders attaching the SAME shared memory
+const simulateShader = await wash_load("./simulate.wasm", sharedMem);
+const renderShader   = await wash_load("./render.wasm", sharedMem);
+
+// Mouse interaction
+let mouseX = 0.5, mouseY = 0.5, isDown = 0;
+canvas.addEventListener("mousemove", (e) => {
+    const rect = canvas.getBoundingClientRect();
+    mouseX = (e.clientX - rect.left) / rect.width;
+    mouseY = (e.clientY - rect.top) / rect.height;
+});
+canvas.addEventListener("mousedown", () => isDown = 1);
+window.addEventListener("mouseup", () => isDown = 0);
+
+let physicsEnabled = true;
+document.querySelector("#togglePhysics").addEventListener("click", (e) => {
+    physicsEnabled = !physicsEnabled;
+    e.target.innerText = physicsEnabled ? "Pause Physics" : "Resume Physics";
+});
+
+const imgData = ctx.createImageData(W, H);
+let frameCount = 0;
+let lastFpsTime = performance.now();
+let frames = 0;
+
+function pipelineLoop() {
+    // Stage 1: Execute Physics Simulation Shader with direct typed parameters
+    if (physicsEnabled) {
+        wash_run(simulateShader, particlesMem, W, H, NUM_PARTICLES, mouseX, mouseY, isDown, frameCount);
+    }
+
+    // Stage 2: Execute Rendering / Post-FX Shader passing BOTH buffer pointers as typed arguments!
+    wash_run(renderShader, particlesMem, pixelsMem, W, H, NUM_PARTICLES);
+
+    // Stage 3: Paint assembled pixels from shared memory to Canvas
+    const pixels = sharedMem.rawU8(PIXEL_OFFSET, PIXEL_BYTES);
+    imgData.data.set(pixels);
+    ctx.putImageData(imgData, 0, 0);
+
+    frameCount++;
+    frames++;
+    const now = performance.now();
+    if (now - lastFpsTime >= 500) {
+        document.querySelector("#fpsStat").innerText = ((frames * 1000) / (now - lastFpsTime)).toFixed(1);
+        frames = 0;
+        lastFpsTime = now;
+    }
+
+    requestAnimationFrame(pipelineLoop);
+}
+
+requestAnimationFrame(pipelineLoop);
+</script>
+</body>
+</html>

@@ -11,24 +11,19 @@
 </head>
 <body>
   <h1>Example 4: Interactive Julia Fractal</h1>
-  <p>Move your mouse over the canvas to change the fractal parameters in real-time. The colors shift automatically based on the clock.</p>
+  <p>Move your mouse over the canvas to change the fractal parameters in real-time. Uniforms (time, mouse coordinates) are passed directly as function arguments!</p>
   <canvas id="canvas" width="800" height="600"></canvas>
 
 <script type="module">
-import { wash } from "../../wash.js";
+import { wash_memory, wash_load, wash_run } from "../../wash.js";
 
 const canvas = document.querySelector("#canvas");
 const ctx = canvas.getContext("2d");
 const W = canvas.width, H = canvas.height;
+const SIZE = W * H * 4;
 
-// Buffer size: 20 bytes of headers (W, H, Time, MouseX, MouseY) + pixels
-const SIZE = 20 + W * H * 4;
-
-const wasm = await wash("./main.wasm", SIZE);
-
-// Set static width and height
-wasm.view.setUint32(0, W, true);
-wasm.view.setUint32(4, H, true);
+const mem = wash_memory(SIZE);
+const shader = await wash_load("./main.wasm", mem);
 
 const image = ctx.createImageData(W, H);
 
@@ -42,16 +37,10 @@ canvas.addEventListener("mousemove", (e) => {
 });
 
 function renderFrame(time) {
-    // Write dynamic inputs to memory
-    wasm.view.setFloat32(8, time, true);
-    wasm.view.setFloat32(12, mouseX, true);
-    wasm.view.setFloat32(16, mouseY, true);
+    // Crunch numbers passing typed parameters directly: (pixels, W, H, time, mouseX, mouseY)
+    wash_run(shader, mem, W, H, time, mouseX, mouseY);
 
-    // Crunch numbers
-    wasm.run();
-
-    // The pixels now start at offset 20
-    image.data.set(wasm.u8.subarray(20));
+    image.data.set(mem.u8);
     ctx.putImageData(image, 0, 0);
 
     requestAnimationFrame(renderFrame);

@@ -2,41 +2,42 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Wash API - Path Tracer V2</title>
+<title>Wash API - Monte Carlo Path Tracer</title>
 <style>
   body { background: #111; color: white; font-family: sans-serif; text-align: center; margin: 0; padding: 20px; }
-  canvas { border: 1px solid #333; margin-top: 20px; cursor: pointer; }
+  canvas { border: 1px solid #333; margin-top: 20px; cursor: grab; }
+  canvas:active { cursor: grabbing; }
   p { max-width: 600px; margin: 0 auto; color: #aaa; }
-  #info { font-family: monospace; color: #88ff88; margin-top: 10px; }
+  #info { margin-top: 10px; font-family: monospace; font-size: 1.1em; color: #66b3ff; }
 </style>
 </head>
 <body>
-  <h1>Example 6: Path Tracer V2 (Glass & Metal)</h1>
+  <h1>Example 6: Monte Carlo Path Tracer</h1>
   <p>Click and drag your mouse on the canvas to look around. Use <b>W, A, S, D</b> to walk. When you move, the engine drops into "Fast Preview" mode at 60FPS. Stop moving to let the global illumination accumulate and render physically accurate glass and metal.</p>
   <canvas id="canvas" width="600" height="400"></canvas>
   <div id="info">Samples: 0</div>
 
 <script type="module">
-import { wash } from "../../wash.js";
+import { wash_memory, wash_load, wash_run } from "../../wash.js";
 
 const canvas = document.querySelector("#canvas");
 const ctx = canvas.getContext("2d");
 const W = canvas.width, H = canvas.height;
 
-// Buffer: 32 bytes (headers) + W*H*12 (accumulation) + W*H*4 (pixels)
-const SIZE = 32 + (W * H * 12) + (W * H * 4);
-const PIXEL_OFFSET = 32 + (W * H * 12);
+// Buffer: W*H*12 (accumulation) + W*H*4 (pixels)
+const ACC_SIZE = W * H * 12;
+const PIXEL_SIZE = W * H * 4;
+const SIZE = ACC_SIZE + PIXEL_SIZE;
+const PIXEL_OFFSET = ACC_SIZE;
 
-const wasm = await wash("./main.wasm", SIZE);
-
-wasm.view.setUint32(0, W, true);
-wasm.view.setUint32(4, H, true);
+const mem = wash_memory(SIZE);
+const shader = await wash_load("./main.wasm", mem);
 
 const image = ctx.createImageData(W, H);
 
 // Camera state
 let camX = 0.0, camY = 0.5, camZ = 1.0;
-let pitch = 0.0, yaw = Math.PI; // Inicia olhando pro -Z (onde estão os objetos)
+let pitch = 0.0, yaw = Math.PI;
 let frameCount = 0;
 
 // Input state
@@ -50,10 +51,9 @@ window.addEventListener("mousemove", (e) => {
     if (!isDragging) return;
     yaw -= e.movementX * 0.005;
     pitch -= e.movementY * 0.005;
-    // Limit pitch to straight up/down
     if (pitch > 1.57) pitch = 1.57;
     if (pitch < -1.57) pitch = -1.57;
-    frameCount = 0; // Trigger Fast Preview
+    frameCount = 0;
 });
 
 document.addEventListener("keydown", (e) => {
@@ -61,7 +61,6 @@ document.addEventListener("keydown", (e) => {
         keys[e.key.toLowerCase()] = true;
     }
 });
-
 document.addEventListener("keyup", (e) => {
     if (keys.hasOwnProperty(e.key.toLowerCase())) {
         keys[e.key.toLowerCase()] = false;
@@ -69,37 +68,27 @@ document.addEventListener("keyup", (e) => {
 });
 
 function renderFrame() {
-    // Process movement
     let moved = false;
     if (keys.w || keys.s || keys.a || keys.d) {
         moved = true;
-        const speed = 0.05;
+        const speed = 0.06;
         const s = Math.sin(yaw);
         const c = Math.cos(yaw);
         
-        // C forward vector is (-sin, 0, cos). Right vector is (cos, 0, sin).
         if (keys.w) { camX += -s * speed; camZ += c * speed; }
         if (keys.s) { camX -= -s * speed; camZ -= c * speed; }
         if (keys.d) { camX -= c * speed; camZ -= s * speed; }
         if (keys.a) { camX += c * speed; camZ += s * speed; }
         
-        frameCount = 0; // Trigger Fast Preview
+        frameCount = 0;
     }
 
-    // Write parameters to WASM memory
-    wasm.view.setUint32(8, frameCount, true);
-    wasm.view.setFloat32(12, camX, true);
-    wasm.view.setFloat32(16, camY, true);
-    wasm.view.setFloat32(20, camZ, true);
-    wasm.view.setFloat32(24, pitch, true);
-    wasm.view.setFloat32(28, yaw, true);
+    // Call C function with typed arguments and get updated frameCount directly from return value!
+    frameCount = wash_run(shader, mem, W, H, frameCount, camX, camY, camZ, pitch, yaw);
 
-    wasm.run();
-
-    frameCount = wasm.view.getUint32(8, true);
     document.getElementById("info").innerText = (frameCount === 1 && moved) ? "Samples: Fast Preview" : "Samples: " + frameCount;
 
-    image.data.set(wasm.u8.subarray(PIXEL_OFFSET, PIXEL_OFFSET + W * H * 4));
+    image.data.set(mem.rawU8(PIXEL_OFFSET, W * H * 4));
     ctx.putImageData(image, 0, 0);
 
     requestAnimationFrame(renderFrame);

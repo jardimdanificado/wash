@@ -11,6 +11,7 @@ examples:
 	$(MAKE) -C examples/06_pathtracer
 	$(MAKE) -C examples/07_native_runner
 	$(MAKE) -C examples/08_parallel_pathtracer
+	$(MAKE) -C examples/09_shared_memory_pipeline
 
 clean:
 	rm -f examples/*/*.wasm

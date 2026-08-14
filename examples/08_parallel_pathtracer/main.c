@@ -3,6 +3,7 @@
 /**
  * Example 8: Parallel Monte Carlo Path Tracer
  * High-performance sliced rendering designed for multi-worker CPU parallelism.
+ * Receives all control uniforms directly as typed C function arguments!
  */
 
 typedef struct { float x, y, z; } Vec3;
@@ -220,27 +221,30 @@ static Vec3 ray_color(Vec3 ro, Vec3 rd, uint32_t *seed, int fast_mode) {
     return accum_light;
 }
 
-// Slice rendering entry point for Multi-Worker parallelism
+// Slice rendering entry point for Multi-Worker parallelism receiving typed arguments directly
 __attribute__((export_name("_start")))
-void* _start(uint8_t* data) {
-    uint32_t width       = *(uint32_t*)(data + 0);
-    uint32_t height      = *(uint32_t*)(data + 4);
-    uint32_t frame_count = *(uint32_t*)(data + 8);
-    float cam_x          = *(float*)(data + 12);
-    float cam_y          = *(float*)(data + 16);
-    float cam_z          = *(float*)(data + 20);
-    float pitch          = *(float*)(data + 24);
-    float yaw            = *(float*)(data + 28);
-    uint32_t start_y     = *(uint32_t*)(data + 32);
-    uint32_t end_y       = *(uint32_t*)(data + 36);
-    uint32_t thread_id   = *(uint32_t*)(data + 40);
-
+void* _start(
+    uint8_t* data,
+    uint32_t width,
+    uint32_t height,
+    uint32_t frame_count,
+    float cam_x,
+    float cam_y,
+    float cam_z,
+    float pitch,
+    float yaw,
+    uint32_t start_y,
+    uint32_t end_y,
+    uint32_t thread_id,
+    uint32_t total_threads
+) {
+    (void)total_threads;
     if (end_y > height) end_y = height;
-    if (start_y >= end_y) return 0;
+    if (start_y >= end_y || width == 0 || height == 0) return 0;
 
-    // Header size = 48 bytes
-    float* acc_buffer = (float*)(data + 48);
-    uint8_t* pixels   = data + 48 + width * height * 12;
+    // Buffer structure: accumulation buffer (W*H*12) followed by pixel buffer (W*H*4)
+    float* acc_buffer = (float*)(data);
+    uint8_t* pixels   = data + width * height * 12;
 
     int fast_mode = (frame_count == 0);
     Vec3 camera = {cam_x, cam_y, cam_z};

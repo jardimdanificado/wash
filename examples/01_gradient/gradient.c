@@ -1,10 +1,7 @@
 #include <stdint.h>
 
-void* _start(uint8_t* data) {
-    uint32_t width = *(uint32_t*)(data + 0);
-    uint32_t height = *(uint32_t*)(data + 4);
-    uint8_t* pixels = data + 8;
-
+__attribute__((export_name("_start")))
+void* _start(uint8_t* pixels, uint32_t width, uint32_t height) {
     for (uint32_t y = 0; y < height; ++y) {
         for (uint32_t x = 0; x < width; ++x) {
             uint32_t offset = (y * width + x) * 4;

@@ -82,12 +82,9 @@ static uint8_t to_byte(float x) {
     return (uint8_t)(clamp_f(x, 0.0f, 1.0f) * 255.0f);
 }
 
-void* _start(uint8_t* data)
+__attribute__((export_name("_start")))
+void* _start(uint8_t* pixels, uint32_t width, uint32_t height)
 {
-    uint32_t width = *(uint32_t*)(data + 0);
-    uint32_t height = *(uint32_t*)(data + 4);
-    uint8_t* pixels = data + 8;
-
     Vec3 light = {2.0f, 4.0f, -1.0f};
     Vec3 camera = {0.0f, 0.5f, -2.5f};
     float aspect = (float)width / (float)height;

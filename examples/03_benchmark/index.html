@@ -24,25 +24,24 @@ button{margin:12px 4px 0;padding:9px 15px;cursor:pointer}
 <div id="stats">Loading WASM...</div>
 </main>
 <script type="module">
-import { wash } from "../../wash.js";
+import { wash_memory, wash_load, wash_run } from "../../wash.js";
 
 const canvas = document.querySelector("#canvas");
 const ctx = canvas.getContext("2d");
 const stats = document.querySelector("#stats");
 const W = canvas.width, H = canvas.height;
-const SIZE = 8 + W * H * 4;
+const SIZE = W * H * 4;
 
-const wasm = await wash("./raytrace.wasm?v=" + Date.now(), SIZE);
-wasm.view.setUint32(0, W, true);
-wasm.view.setUint32(4, H, true);
+const mem = wash_memory(SIZE);
+const shader = await wash_load("./raytrace.wasm?v=" + Date.now(), mem);
 
 const image = ctx.createImageData(W, H);
 
 function renderWasm() {
     const t0 = performance.now();
-    wasm.run();
+    wash_run(shader, mem, W, H);
     const elapsed = performance.now() - t0;
-    image.data.set(wasm.u8.subarray(8));
+    image.data.set(mem.u8);
     ctx.putImageData(image, 0, 0);
     stats.textContent = `WASM: ${elapsed.toFixed(3)} ms`;
     return elapsed;

@@ -15,20 +15,17 @@
   <canvas id="canvas" width="800" height="600"></canvas>
 
 <script type="module">
-import { wash } from "../../wash.js";
+import { wash_memory, wash_load, wash_run } from "../../wash.js";
 
 const canvas = document.querySelector("#canvas");
 const ctx = canvas.getContext("2d");
 const W = canvas.width, H = canvas.height;
 
-// Buffer size: 20 bytes headers + Pixels + 20000 Particles (28 bytes each)
 const NUM_PARTICLES = 20000;
-const SIZE = 20 + (W * H * 4) + (NUM_PARTICLES * 28);
+const SIZE = (W * H * 4) + (NUM_PARTICLES * 28);
 
-const wasm = await wash("./main.wasm", SIZE);
-
-wasm.view.setUint32(0, W, true);
-wasm.view.setUint32(4, H, true);
+const mem = wash_memory(SIZE);
+const shader = await wash_load("./main.wasm", mem);
 
 const image = ctx.createImageData(W, H);
 
@@ -41,13 +38,11 @@ canvas.addEventListener("mousemove", (e) => {
     mouseY = (e.clientY - rect.top) / rect.height;
 });
 
-function renderFrame(time) {
-    wasm.view.setFloat32(12, mouseX, true);
-    wasm.view.setFloat32(16, mouseY, true);
+function renderFrame() {
+    // Pass typed parameters directly: (pixels, W, H, mouseX, mouseY, NUM_PARTICLES)
+    wash_run(shader, mem, W, H, mouseX, mouseY, NUM_PARTICLES);
 
-    wasm.run();
-
-    image.data.set(wasm.u8.subarray(20, 20 + W * H * 4));
+    image.data.set(mem.rawU8(0, W * H * 4));
     ctx.putImageData(image, 0, 0);
 
     requestAnimationFrame(renderFrame);

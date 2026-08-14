@@ -61,9 +61,9 @@
 </style>
 </head>
 <body>
-  <h1>Example 8: Parallel Monte Carlo Path Tracer <span class="badge">Multi-threading</span></h1>
+  <h1>Example 8: Parallel Monte Carlo Path Tracer <span class="badge">wash_worker</span></h1>
   <p>
-    Distributes rays across multiple <b>Web Workers</b> in parallel using sliced CPU scanlines.
+    Distributes Monte Carlo ray tracing across CPU threads using typed function arguments with <b>wash_worker()</b>.
     Click & drag to look around, <b>W, A, S, D</b> to walk.
   </p>
 
@@ -87,6 +87,8 @@
   </div>
 
 <script type="module">
+import { wash_memory, wash_load, wash_worker } from "../../wash.js";
+
 const canvas = document.querySelector("#canvas");
 const ctx = canvas.getContext("2d");
 const W = canvas.width, H = canvas.height;
@@ -114,43 +116,20 @@ if (![...threadSelect.options].some(o => parseInt(o.value) === MAX_THREADS)) {
     threadSelect.appendChild(opt);
 }
 
-// Memory layout: 48 bytes (header) + W*H*12 (accumulation) + W*H*4 (pixels)
-const HEADER_SIZE = 48;
+// Memory layout: W*H*12 (accumulation) + W*H*4 (pixels) = ~4.3 MB
 const ACC_SIZE = W * H * 12;
 const PIXEL_SIZE = W * H * 4;
-const TOTAL_SIZE = HEADER_SIZE + ACC_SIZE + PIXEL_SIZE;
-const PIXEL_OFFSET = HEADER_SIZE + ACC_SIZE;
+const TOTAL_SIZE = ACC_SIZE + PIXEL_SIZE;
+const PIXEL_OFFSET = ACC_SIZE;
 
-// Compile WASM binary once
-const wasmResponse = await fetch("./main.wasm");
-const wasmBytes = await wasmResponse.arrayBuffer();
-const wasmModule = await WebAssembly.compile(wasmBytes);
+// 1. Create a memory buffer & load the shader module once
+const mem = wash_memory(TOTAL_SIZE);
+const shader = await wash_load("./main.wasm", mem);
 
-// Pre-spawn Worker Pool up to MAX_THREADS once at startup
-const workerPool = [];
-const initPromises = [];
-
-for (let i = 0; i < MAX_THREADS; i++) {
-    const worker = new Worker("./worker.js");
-    const p = new Promise(resolve => {
-        worker.onmessage = (e) => {
-            if (e.data.type === "ready") resolve();
-        };
-    });
-    worker.postMessage({
-        type: "init",
-        module: wasmModule,
-        totalSize: TOTAL_SIZE
-    });
-    workerPool.push(worker);
-    initPromises.push(p);
-}
-
-// Wait for all workers in pool to be completely initialized
-await Promise.all(initPromises);
+// 2. Create explicit Wash Workers (one per available core)
+const workers = Array.from({ length: MAX_THREADS }, () => wash_worker());
 
 let numWorkers = parseInt(threadSelect.value);
-
 threadSelect.addEventListener("change", () => {
     numWorkers = parseInt(threadSelect.value);
     frameCount = 0;
@@ -182,11 +161,9 @@ document.addEventListener("keyup", (e) => {
 });
 
 const imgData = ctx.createImageData(W, H);
-
 let lastFpsTime = performance.now();
 let framesRendered = 0;
 let singleThreadThroughput = 0;
-
 let isRendering = false;
 
 async function renderLoop() {
@@ -207,58 +184,44 @@ async function renderLoop() {
     }
 
     const tStart = performance.now();
-
-    // Divide screen rows evenly among active workers
-    const activeCount = Math.min(numWorkers, workerPool.length);
+    const activeCount = Math.min(numWorkers, workers.length);
     const sliceHeight = Math.ceil(H / activeCount);
-    const workerPromises = [];
 
+    // 3. Dispatch slices using worker.runSlice(...args) with typed arguments
+    const promises = [];
     for (let i = 0; i < activeCount; i++) {
         const startY = i * sliceHeight;
         const endY = Math.min(H, (i + 1) * sliceHeight);
-        if (startY >= H) break;
-
         const sliceByteLength = (endY - startY) * W * 4;
-        const worker = workerPool[i];
+        const slicePixelOffset = PIXEL_OFFSET + (startY * W * 4);
 
-        const p = new Promise(resolve => {
-            worker.onmessage = (e) => {
-                if (e.data.type === "done") {
-                    const { startY, sliceData } = e.data;
-                    const sliceView = new Uint8Array(sliceData);
-                    const targetOffset = startY * W * 4;
-                    imgData.data.set(sliceView, targetOffset);
-                    resolve();
-                }
-            };
-        });
-
-        worker.postMessage({
-            type: "render_slice",
-            width: W,
-            height: H,
-            frameCount: frameCount,
+        // Pass typed arguments straight to C _start(...) function:
+        // _start(data, W, H, frameCount, camX, camY, camZ, pitch, yaw, startY, endY, threadId, totalThreads)
+        const p = workers[i].runSlice(
+            shader,
+            slicePixelOffset,
+            sliceByteLength,
+            mem, // data pointer
+            W, H, frameCount,
             camX, camY, camZ,
             pitch, yaw,
             startY, endY,
-            threadId: i,
-            totalThreads: activeCount,
-            pixelOffset: PIXEL_OFFSET,
-            sliceByteLength
+            i, activeCount
+        ).then(res => {
+            const sliceView = new Uint8Array(res.transferBuffer);
+            imgData.data.set(sliceView, startY * W * 4);
         });
 
-        workerPromises.push(p);
+        promises.push(p);
     }
 
-    // Wait for all active workers to finish their scanlines
-    await Promise.all(workerPromises);
+    await Promise.all(promises);
 
     const tEnd = performance.now();
     const frameDuration = tEnd - tStart;
-
     frameCount++;
 
-    // Paint assembled slices to canvas
+    // Paint to canvas
     ctx.putImageData(imgData, 0, 0);
 
     // Optional debug visualizer of thread slices
@@ -275,7 +238,7 @@ async function renderLoop() {
         }
     }
 
-    // Calculate throughput and performance metrics
+    // Calculate metrics
     framesRendered++;
     const now = performance.now();
     if (now - lastFpsTime >= 500) {

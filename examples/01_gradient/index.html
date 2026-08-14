@@ -10,30 +10,27 @@
 </head>
 <body>
   <h1>Example 1: Simple Gradient</h1>
-  <p>Shows how to use the Wash.js API to render a simple image.</p>
+  <p>Shows how to pass <b>W, H</b> directly as typed arguments with zero buffer unpacking boilerplate.</p>
   <canvas id="canvas" width="400" height="300"></canvas>
 
 <script type="module">
-import { wash } from "../../wash.js";
+import { wash_memory, wash_load, wash_run } from "../../wash.js";
 
 const canvas = document.querySelector("#canvas");
 const ctx = canvas.getContext("2d");
 const W = canvas.width, H = canvas.height;
-const SIZE = 8 + W * H * 4;
+const SIZE = W * H * 4;
 
-// Initialize the Wash API
-const wasm = await wash("./gradient.wasm", SIZE);
+// 1. Allocate pixel memory & load shader
+const mem = wash_memory(SIZE);
+const shader = await wash_load("./gradient.wasm", mem);
 
-// Fill width and height using DataView
-wasm.view.setUint32(0, W, true);
-wasm.view.setUint32(4, H, true);
+// 2. Execute shader passing typed arguments directly (pixels, width, height)
+wash_run(shader, mem, W, H);
 
-// Run the C function
-wasm.run();
-
-// Extract pixels from Uint8Array and output to canvas
+// 3. Extract pixels and output to canvas
 const image = ctx.createImageData(W, H);
-image.data.set(wasm.u8.subarray(8));
+image.data.set(mem.u8);
 ctx.putImageData(image, 0, 0);
 </script>
 </body>

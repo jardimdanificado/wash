@@ -1,22 +1,14 @@
 #include <stdint.h>
 
-void* _start(uint8_t* data) {
-    uint32_t width = *(uint32_t*)(data + 0);
-    uint32_t height = *(uint32_t*)(data + 4);
-    float time = *(float*)(data + 8);
-    float mouseX = *(float*)(data + 12);
-    float mouseY = *(float*)(data + 16);
-    
-    // Pixel buffer starts at offset 20 now, because we added 12 bytes of floats
-    uint8_t* pixels = data + 20;
-
+__attribute__((export_name("_start")))
+void* _start(uint8_t* pixels, uint32_t width, uint32_t height, float time, float mouseX, float mouseY) {
     float aspect = (float)width / (float)height;
 
     // Map mouse to Julia set complex coordinates (cx, cy)
     float cx = (mouseX - 0.5f) * 2.0f;
     float cy = (mouseY - 0.5f) * 2.0f;
 
-    // Time-based color shifting (using simple triangle wave instead of sinf)
+    // Time-based color shifting (using simple triangle wave)
     float t = time * 0.001f;
     float t1 = t - (int)t; if(t1 < 0) t1 += 1.0f;
     float t2 = (t + 0.33f) - (int)(t + 0.33f); if(t2 < 0) t2 += 1.0f;
@@ -41,11 +33,10 @@ void* _start(uint8_t* data) {
             }
 
             float t_color = (float)iter / max_iter;
-            // Smooth coloring
             if (iter < max_iter) {
                 t_color = __builtin_sqrtf(t_color); 
             } else {
-                t_color = 0.0f; // Inner core is black
+                t_color = 0.0f;
             }
             
             uint32_t offset = (y * width + x) * 4;

@@ -179,19 +179,22 @@ static Vec3 ray_color(Vec3 ro, Vec3 rd, uint32_t *seed, int fast_mode) {
     return (Vec3){0, 0, 0};
 }
 
-void* _start(uint8_t* data) {
-    uint32_t width = *(uint32_t*)(data + 0);
-    uint32_t height = *(uint32_t*)(data + 4);
-    uint32_t frame_count = *(uint32_t*)(data + 8);
-    float cam_x = *(float*)(data + 12);
-    float cam_y = *(float*)(data + 16);
-    float cam_z = *(float*)(data + 20);
-    float pitch = *(float*)(data + 24);
-    float yaw   = *(float*)(data + 28);
-    
-    // Header tem 32 bytes agora.
-    float* acc_buffer = (float*)(data + 32);
-    uint8_t* pixels = data + 32 + width * height * 12;
+__attribute__((export_name("_start")))
+uint32_t _start(
+    uint8_t* data,
+    uint32_t width,
+    uint32_t height,
+    uint32_t frame_count,
+    float cam_x,
+    float cam_y,
+    float cam_z,
+    float pitch,
+    float yaw
+) {
+    if (width == 0 || height == 0) return 0;
+
+    float* acc_buffer = (float*)(data);
+    uint8_t* pixels = data + width * height * 12;
 
     int fast_mode = (frame_count == 0);
 
@@ -250,6 +253,5 @@ void* _start(uint8_t* data) {
         }
     }
     
-    *(uint32_t*)(data + 8) = frame_count + 1;
-    return 0;
+    return frame_count + 1;
 }

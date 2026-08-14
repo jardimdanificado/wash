@@ -1,40 +1,25 @@
-let wasmInstance = null;
-let heapBase = 65536;
-let memory = null;
+import { wash_memory, wash_load, wash_run } from "../../wash.js";
+
+let shader = null;
+let sharedMem = null;
 
 self.onmessage = async (e) => {
     const data = e.data;
 
     if (data.type === "init") {
-        const { module, totalSize } = data;
-        
         try {
-            const res = await WebAssembly.instantiate(module);
-            wasmInstance = (res instanceof WebAssembly.Instance) ? res : (res.instance || res);
-            memory = wasmInstance.exports.memory;
-
-            if (wasmInstance.exports.__heap_base) {
-                heapBase = wasmInstance.exports.__heap_base.value;
-            }
-
-            // Ensure memory has enough pages
-            const requiredPages = Math.ceil((heapBase + totalSize) / 65536);
-            const currentPages = memory.buffer.byteLength / 65536;
-            if (requiredPages > currentPages) {
-                memory.grow(requiredPages - currentPages);
-            }
-
+            // Allocate memory & load the WASM shader using the new Wash API
+            sharedMem = wash_memory(data.totalSize);
+            shader = await wash_load(data.module, sharedMem);
             self.postMessage({ type: "ready" });
         } catch (err) {
-            console.error("Worker WASM initialization error:", err);
+            console.error("Worker Wash initialization error:", err);
         }
         return;
     }
 
     if (data.type === "render_slice") {
-        if (!memory || !wasmInstance) {
-            return;
-        }
+        if (!shader || !sharedMem) return;
 
         const {
             width, height, frameCount,
@@ -45,8 +30,8 @@ self.onmessage = async (e) => {
             pixelOffset, sliceByteLength
         } = data;
 
-        // Populate slice uniforms in this worker's linear memory
-        const view = new DataView(memory.buffer, heapBase);
+        // Populate slice uniforms in the worker's memory view
+        const view = sharedMem.view;
         view.setUint32(0, width, true);
         view.setUint32(4, height, true);
         view.setUint32(8, frameCount, true);
@@ -60,17 +45,15 @@ self.onmessage = async (e) => {
         view.setUint32(40, threadId, true);
         view.setUint32(44, totalThreads, true);
 
-        // Execute C raytracer kernel for this scanline range
-        wasmInstance.exports._start(heapBase);
+        // Execute shader using wash_run
+        wash_run(shader, sharedMem);
 
         // Extract this slice's RGBA pixel data
-        const slicePixelStart = heapBase + pixelOffset + (startY * width * 4);
-        const slicePixels = new Uint8Array(memory.buffer, slicePixelStart, sliceByteLength);
+        const sliceOffset = pixelOffset + (startY * width * 4);
+        const slicePixels = sharedMem.rawU8(sliceOffset, sliceByteLength);
 
-        // Copy slice to transferable buffer to send back instantly
+        // Transfer buffer back to main thread
         const transferBuffer = slicePixels.slice().buffer;
-
-        // Post message with zero-copy transferable ArrayBuffer
         self.postMessage({
             type: "done",
             threadId,

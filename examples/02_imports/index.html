@@ -15,30 +15,31 @@
   <canvas id="canvas" width="400" height="300"></canvas>
 
 <script type="module">
-import { wash } from "../../wash.js";
+import { wash_memory, wash_load, wash_run } from "../../wash.js";
 
 const canvas = document.querySelector("#canvas");
 const ctx = canvas.getContext("2d");
 const W = canvas.width, H = canvas.height;
 const SIZE = 8 + W * H * 4;
 
-// Injection object. We pass these functions for WebAssembly to use.
+// Injection object: functions for WebAssembly to invoke
 const env = {
     console_log: (val) => console.log("C code just said: " + val),
     get_random: () => Math.random()
 };
 
-// Pass the env object inside the Wash API imports
-const wasm = await wash("./imports.wasm", SIZE, { env });
+// 1. Allocate memory & load shader with imports
+const mem = wash_memory(SIZE);
+const shader = await wash_load("./imports.wasm", mem, { env });
 
-wasm.view.setUint32(0, W, true);
-wasm.view.setUint32(4, H, true);
+mem.view.setUint32(0, W, true);
+mem.view.setUint32(4, H, true);
 
-// When running, C will invoke callbacks back to JS (logs and random)!
-wasm.run();
+// 2. Execute shader
+wash_run(shader, mem);
 
 const image = ctx.createImageData(W, H);
-image.data.set(wasm.u8.subarray(8));
+image.data.set(mem.rawU8(8, W * H * 4));
 ctx.putImageData(image, 0, 0);
 </script>
 </body>
