@@ -3,66 +3,361 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Wash API & Studio</title>
+<title>Wash - WebAssembly Compute & Shaders</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-body { margin: 0; background: #121214; color: #eee; font-family: system-ui, sans-serif; display: grid; place-items: center; min-height: 100vh; padding: 20px 0; }
-main { text-align: left; width: min(650px, 94vw); background: #1e1e24; padding: 32px; border-radius: 12px; border: 1px solid #33333d; box-shadow: 0 10px 40px rgba(0,0,0,0.5); }
-h1 { margin-top: 0; display: flex; align-items: center; gap: 10px; }
-.studio-banner {
-  background: linear-gradient(135deg, #1e3a8a, #4338ca);
-  border: 1px solid #3b82f6;
-  border-radius: 8px;
-  padding: 16px 20px;
-  margin-bottom: 24px;
+:root {
+  --bg0-hard: #1d2021;
+  --bg0: #282828;
+  --bg0-soft: #32302f;
+  --bg1: #3c3836;
+  --bg2: #504945;
+  --bg3: #665c54;
+
+  --fg0: #fbf1c7;
+  --fg1: #ebdbb2;
+  --fg2: #d5c4a1;
+  --fg3: #bdae93;
+  --fg4: #a89984;
+  --gray: #928374;
+
+  --red: #cc241d;
+  --red-bright: #fb4934;
+  --green: #98971a;
+  --green-bright: #b8bb26;
+  --yellow: #d79921;
+  --yellow-bright: #fabd2f;
+  --blue: #458588;
+  --blue-bright: #83a598;
+  --purple: #b16286;
+  --purple-bright: #d3869b;
+  --aqua: #689d6a;
+  --aqua-bright: #8ec07c;
+  --orange: #d65d0e;
+  --orange-bright: #fe8019;
+
+  --font-mono: 'JetBrains Mono', 'Fira Code', Menlo, Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border-radius: 0 !important;
+}
+
+body {
+  background: var(--bg0-hard);
+  color: var(--fg1);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 40px 16px;
+}
+
+main {
+  width: min(780px, 100%);
+  background: var(--bg0);
+  border: 2px solid var(--bg1);
+  box-shadow: 8px 8px 0px rgba(0, 0, 0, 0.4);
+}
+
+.header-bar {
+  background: var(--bg0-soft);
+  border-bottom: 2px solid var(--bg1);
+  padding: 12px 20px;
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
-.studio-banner h2 { margin: 0 0 4px 0; font-size: 1.25rem; color: #fff; }
-.studio-banner p { margin: 0; font-size: 0.9rem; color: #bfdbfe; }
-.btn-studio {
-  background: #3b82f6;
-  color: white;
-  text-decoration: none;
-  padding: 8px 16px;
-  border-radius: 6px;
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 18px;
   font-weight: 700;
-  font-size: 0.9rem;
-  transition: all 0.15s ease;
-  white-space: nowrap;
+  color: var(--fg0);
+  letter-spacing: -0.5px;
 }
-.btn-studio:hover { background: #2563eb; }
-a { color: #60a5fa; text-decoration: none; font-size: 1.05em; line-height: 1.7; }
-a:hover { text-decoration: underline; }
-li { margin-bottom: 10px; }
-.badge { background: #059669; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; }
+
+.logo-badge {
+  background: var(--orange);
+  color: var(--bg0-hard);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 6px;
+  text-transform: uppercase;
+}
+
+.content {
+  padding: 24px;
+}
+
+.tagline {
+  color: var(--fg4);
+  margin-bottom: 24px;
+  font-size: 12.5px;
+  border-left: 3px solid var(--yellow);
+  padding-left: 12px;
+}
+
+/* Featured Studio Card */
+.studio-card {
+  background: var(--bg0-soft);
+  border: 2px solid var(--orange);
+  padding: 18px 20px;
+  margin-bottom: 30px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  transition: border-color 0.15s, transform 0.1s;
+}
+
+.studio-card:hover {
+  border-color: var(--orange-bright);
+  background: var(--bg1);
+}
+
+.studio-card h2 {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--orange-bright);
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.studio-card p {
+  color: var(--fg2);
+  font-size: 12px;
+}
+
+.btn {
+  background: var(--orange);
+  color: var(--bg0-hard);
+  border: 1px solid var(--orange-bright);
+  padding: 8px 16px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.btn:hover {
+  background: var(--orange-bright);
+  color: var(--bg0-hard);
+}
+
+/* Examples Section */
+.section-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--yellow-bright);
+  letter-spacing: 1px;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.section-title::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--bg1);
+}
+
+.example-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.example-item {
+  background: var(--bg0-soft);
+  border: 1px solid var(--bg1);
+  padding: 10px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  text-decoration: none;
+  color: var(--fg1);
+  transition: all 0.1s ease;
+}
+
+.example-item:hover {
+  background: var(--bg1);
+  border-color: var(--yellow);
+  color: var(--fg0);
+  transform: translateX(4px);
+}
+
+.example-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.example-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--blue-bright);
+}
+
+.example-item:hover .example-title {
+  color: var(--yellow-bright);
+}
+
+.example-desc {
+  font-size: 11.5px;
+  color: var(--fg4);
+}
+
+.example-tag {
+  background: var(--bg2);
+  color: var(--aqua-bright);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+  border: 1px solid var(--bg3);
+}
+
+/* Footer */
+footer {
+  border-top: 2px solid var(--bg1);
+  background: var(--bg0-soft);
+  padding: 8px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: var(--gray);
+}
 </style>
 </head>
 <body>
 <main>
-<h1>Wash API <span class="badge">v2.0</span></h1>
-<p style="color:#aaa; margin-bottom: 20px;">Universal WebAssembly compute engine & multi-shader shared memory pipeline.</p>
-
-<div class="studio-banner">
-  <div>
-    <h2>🎨 Wash Studio (Web IDE)</h2>
-    <p>Compile multiple C shaders in-browser, edit JS pipelines, and download ZIP.</p>
+  <div class="header-bar">
+    <div class="logo">
+      <span>WASH</span>
+    </div>
+    <div style="font-size: 11px; color: var(--gray);">C -> WASM COMPUTE & SHADERS</div>
   </div>
-  <a href="studio/" class="btn-studio">Open Studio &rarr;</a>
-</div>
 
-<h3 style="color:#94a3b8; font-size:0.9rem; text-transform:uppercase; letter-spacing:1px; margin-bottom:12px;">Standalone Examples</h3>
-<ul>
-  <li><a href="examples/01_gradient/">Example 1: Simple Gradient</a> - A basic introduction to rendering pixels.</li>
-  <li><a href="examples/02_imports/">Example 2: JS Imports</a> - Interacting with JavaScript from within WebAssembly.</li>
-  <li><a href="examples/03_benchmark/">Example 3: Raymarching Benchmark</a> - A heavy compute shader comparing WASM vs JS performance.</li>
-  <li><a href="examples/04_interactive/">Example 4: Interactive Fractal</a> - A Julia set that animates over time and reacts to mouse movement.</li>
-  <li><a href="examples/05_physics/">Example 5: Particle Physics</a> - A physics engine simulating 20,000 particles with state persistence.</li>
-  <li><a href="examples/06_pathtracer/">Example 6: Monte Carlo Path Tracer</a> - Photorealistic rendering accumulating rays to resolve global illumination.</li>
-  <li><a href="examples/07_native_runner/">Example 7: Native C Runner</a> - Running the exact same WASM shaders outside the browser in native C/CLI.</li>
-  <li><a href="examples/08_parallel_pathtracer/">Example 8: Parallel Path Tracer (Multi-threaded)</a> - Sliced CPU multi-threading across all CPU cores with Web Workers.</li>
-  <li><a href="examples/09_shared_memory_pipeline/">Example 9: Shared Memory Pipeline</a> - Two completely different WASM shaders cooperating on a single memory buffer.</li>
-</ul>
+  <div class="content">
+    <div class="tagline">
+      Universal WebAssembly compute engine & multi-shader shared memory pipeline for high-performance graphics and physics.
+    </div>
+
+    <!-- Featured Laundry IDE Card -->
+    <a href="studio/" class="studio-card" style="text-decoration: none;">
+      <div>
+        <h2>⚡ LAUNDRY</h2>
+        <p>Compile multiple C shaders in-browser with live syntax highlighting, memory orchestration, and instant ZIP export.</p>
+      </div>
+      <span class="btn">OPEN LAUNDRY &rarr;</span>
+    </a>
+
+    <div class="section-title">STANDALONE EXAMPLES</div>
+
+    <div class="example-list">
+      <a href="examples/01_gradient/" class="example-item">
+        <div class="example-main">
+          <span class="example-title">01. Simple Gradient</span>
+          <span class="example-desc">Direct framebuffer rendering and zero-overhead RGBA pixel manipulation.</span>
+        </div>
+        <span class="example-tag">GRAPHICS</span>
+      </a>
+
+      <a href="examples/02_imports/" class="example-item">
+        <div class="example-main">
+          <span class="example-title">02. JavaScript Imports</span>
+          <span class="example-desc">Calling host JS functions and console logging directly from C WebAssembly.</span>
+        </div>
+        <span class="example-tag">FFI / IMPORTS</span>
+      </a>
+
+      <a href="examples/03_benchmark/" class="example-item">
+        <div class="example-main">
+          <span class="example-title">03. Raymarching Benchmark</span>
+          <span class="example-desc">Heavy SDF raymarching compute comparing WASM vs pure JS execution.</span>
+        </div>
+        <span class="example-tag">BENCHMARK</span>
+      </a>
+
+      <a href="examples/04_interactive/" class="example-item">
+        <div class="example-main">
+          <span class="example-title">04. Interactive Julia Fractal</span>
+          <span class="example-desc">Dynamic Julia set reacting to real-time mouse coordinates and continuous time.</span>
+        </div>
+        <span class="example-tag">FRACTALS</span>
+      </a>
+
+      <a href="examples/05_physics/" class="example-item">
+        <div class="example-main">
+          <span class="example-title">05. Particle Physics Engine</span>
+          <span class="example-desc">20,000 interactive particles with gravity wells, velocities, and state persistence.</span>
+        </div>
+        <span class="example-tag">PHYSICS</span>
+      </a>
+
+      <a href="examples/06_pathtracer/" class="example-item">
+        <div class="example-main">
+          <span class="example-title">06. Monte Carlo Path Tracer</span>
+          <span class="example-desc">Photorealistic 3D rendering with glass, metal, diffuse surfaces, and ray accumulation.</span>
+        </div>
+        <span class="example-tag">RAYTRACING</span>
+      </a>
+
+      <a href="examples/07_native_runner/" class="example-item">
+        <div class="example-main">
+          <span class="example-title">07. Native C / SDL2 Runner</span>
+          <span class="example-desc">Executing the exact same WASM shaders outside the browser via Wasm3 and SDL2.</span>
+        </div>
+        <span class="example-tag">NATIVE CLI</span>
+      </a>
+
+      <a href="examples/08_parallel_pathtracer/" class="example-item">
+        <div class="example-main">
+          <span class="example-title">08. Multi-Threaded Path Tracer</span>
+          <span class="example-desc">Sliced CPU multi-threading across all available CPU cores with wash_worker.</span>
+        </div>
+        <span class="example-tag">THREADS</span>
+      </a>
+
+      <a href="examples/09_shared_memory_pipeline/" class="example-item">
+        <div class="example-main">
+          <span class="example-title">09. Shared Memory Pipeline</span>
+          <span class="example-desc">Two distinct WASM shaders (Physics + Rasterizer) sharing the same memory.</span>
+        </div>
+        <span class="example-tag">SHARED MEM</span>
+      </a>
+    </div>
+  </div>
+
+  <footer>
+    <span>GRUVBOX DARK • ZERO DEPENDENCIES</span>
+    <span>WASH ENGINE</span>
+  </footer>
 </main>
 </body>
 </html>

@@ -5,8 +5,11 @@ import { PRESETS } from "./presets.js";
 const tabList = document.querySelector("#tabList");
 const addTabBtn = document.querySelector("#addTabBtn");
 const codeEditor = document.querySelector("#codeEditor");
+const codeHighlight = document.querySelector("#codeHighlight");
 const compileBtn = document.querySelector("#compileBtn");
 const downloadBtn = document.querySelector("#downloadBtn");
+const uploadZipBtn = document.querySelector("#uploadZipBtn");
+const zipFileInput = document.querySelector("#zipFileInput");
 const presetSelect = document.querySelector("#presetSelect");
 const playPauseBtn = document.querySelector("#playPauseBtn");
 const clearLogsBtn = document.querySelector("#clearLogsBtn");
@@ -15,6 +18,32 @@ const canvas = document.querySelector("#viewport");
 const ctx = canvas.getContext("2d");
 const fpsStat = document.querySelector("#fpsStat");
 const statusMsg = document.querySelector("#statusMsg");
+const docsBtn = document.querySelector("#docsBtn");
+const closeDocsBtn = document.querySelector("#closeDocsBtn");
+const docsModal = document.querySelector("#docsModal");
+
+if (docsBtn && docsModal) {
+    docsBtn.addEventListener("click", () => {
+        docsModal.style.display = "flex";
+        if (typeof Prism !== "undefined") {
+            Prism.highlightAllUnder(docsModal);
+        }
+    });
+
+    closeDocsBtn?.addEventListener("click", () => {
+        docsModal.style.display = "none";
+    });
+
+    docsModal.addEventListener("click", (e) => {
+        if (e.target === docsModal) docsModal.style.display = "none";
+    });
+
+    window.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && docsModal.style.display !== "none") {
+            docsModal.style.display = "none";
+        }
+    });
+}
 
 // State
 let tabs = [];
@@ -57,6 +86,33 @@ function clearLogs() {
 }
 clearLogsBtn.addEventListener("click", clearLogs);
 
+// Syntax Highlighting Synchronization
+function updateHighlight() {
+    const active = tabs.find(t => t.id === activeTabId);
+    if (!active) return;
+
+    const lang = active.type === "c" ? "c" : "javascript";
+    codeHighlight.className = `language-${lang}`;
+    codeHighlight.textContent = codeEditor.value + (codeEditor.value.endsWith("\n") ? " " : "");
+
+    if (typeof Prism !== "undefined") {
+        Prism.highlightElement(codeHighlight);
+    }
+}
+
+function syncScroll() {
+    codeHighlight.parentElement.scrollTop = codeEditor.scrollTop;
+    codeHighlight.parentElement.scrollLeft = codeEditor.scrollLeft;
+}
+
+codeEditor.addEventListener("input", () => {
+    updateHighlight();
+    const current = tabs.find(t => t.id === activeTabId);
+    if (current) current.code = codeEditor.value;
+});
+
+codeEditor.addEventListener("scroll", syncScroll);
+
 // Tab Management
 function renderTabs() {
     tabList.innerHTML = "";
@@ -90,6 +146,8 @@ function switchTab(id) {
     const next = tabs.find(t => t.id === id);
     if (next) {
         codeEditor.value = next.code;
+        updateHighlight();
+        syncScroll();
     }
     renderTabs();
 }
@@ -119,7 +177,7 @@ void* _start(uint8_t* pixels, uint32_t width, uint32_t height) {
         for (uint32_t x = 0; x < width; ++x) {
             uint32_t off = (y * width + x) * 4;
             pixels[off + 0] = (uint8_t)((x * 255) / width);
-            pixels[off + 1] = 128;
+            pixels[off + 1] = 160;
             pixels[off + 2] = (uint8_t)((y * 255) / height);
             pixels[off + 3] = 255;
         }
@@ -136,7 +194,7 @@ function loadPreset(presetKey) {
     if (!preset) return;
     tabs = JSON.parse(JSON.stringify(preset.tabs));
     switchTab(tabs[0].id);
-    log(`Loaded template: ${preset.name}`, "info");
+    log(`Preset loaded: ${preset.name}`, "info");
     compileAndRun();
 }
 
@@ -176,12 +234,12 @@ async function compileShader(filename, code) {
 
 // Compile All & Execute Pipeline
 async function compileAndRun() {
-    // Save current active tab text
     const current = tabs.find(t => t.id === activeTabId);
     if (current) current.code = codeEditor.value;
 
-    log("Starting in-browser multi-shader compilation...", "info");
-    statusMsg.textContent = "Compiling...";
+    log("Starting multi-shader compilation pipeline...", "info");
+    statusMsg.textContent = "COMPILING...";
+    statusMsg.style.color = "var(--yellow-bright)";
     compileBtn.disabled = true;
 
     if (animFrameId) cancelAnimationFrame(animFrameId);
@@ -194,10 +252,10 @@ async function compileAndRun() {
 
         // Compile all C shaders
         for (const tab of cTabs) {
-            log(`Compiling ${tab.name} to WebAssembly...`, "info");
+            log(`Compiling ${tab.name} -> WebAssembly...`, "info");
             const res = await compileShader(tab.name, tab.code);
             compiledShaders[res.outFileName] = new Uint8Array(res.wasmBytes);
-            log(`✔ ${res.outFileName} ready (${res.wasmBytes.byteLength} bytes)`, "ok");
+            log(`✔ ${res.outFileName} built successfully (${res.wasmBytes.byteLength} B)`, "ok");
         }
 
         // Map compiled shaders to Uint8Array URLs / buffers for wash_load
@@ -209,7 +267,7 @@ async function compileAndRun() {
 
         // Prepare JS Execution Environment
         const jsTab = tabs.find(t => t.type === "js");
-        if (!jsTab) throw new Error("No main.js tab found!");
+        if (!jsTab) throw new Error("No main.js tab found in project!");
 
         log("Executing main.js pipeline...", "info");
 
@@ -239,13 +297,15 @@ async function compileAndRun() {
             ctx
         );
 
-        log("✔ Pipeline started successfully at 60 FPS!", "ok");
-        statusMsg.textContent = "Running";
+        log("✔ Pipeline running at 60 FPS!", "ok");
+        statusMsg.textContent = "RUNNING";
+        statusMsg.style.color = "var(--green-bright)";
         startRenderLoop();
 
     } catch (err) {
         log(`❌ Error: ${err.message}`, "err");
-        statusMsg.textContent = "Error";
+        statusMsg.textContent = "ERROR";
+        statusMsg.style.color = "var(--red-bright)";
     } finally {
         compileBtn.disabled = false;
     }
@@ -290,6 +350,8 @@ function startRenderLoop() {
             }
         } catch (err) {
             log(`Runtime error: ${err.message}`, "err");
+            statusMsg.textContent = "RUNTIME ERROR";
+            statusMsg.style.color = "var(--red-bright)";
             return;
         }
 
@@ -301,7 +363,7 @@ function startRenderLoop() {
 
 playPauseBtn.addEventListener("click", () => {
     isPlaying = !isPlaying;
-    playPauseBtn.textContent = isPlaying ? "⏸ Pause" : "▶ Resume";
+    playPauseBtn.textContent = isPlaying ? "PAUSE" : "RESUME";
     if (isPlaying) startRenderLoop();
 });
 
@@ -313,6 +375,7 @@ codeEditor.addEventListener("keydown", (e) => {
         const end = codeEditor.selectionEnd;
         codeEditor.value = codeEditor.value.substring(0, start) + "    " + codeEditor.value.substring(end);
         codeEditor.selectionStart = codeEditor.selectionEnd = start + 4;
+        updateHighlight();
     }
 });
 
@@ -322,9 +385,129 @@ fetch("../wash.js")
     .then(text => { washJsSource = text; })
     .catch(() => {});
 
+// Import / Load ZIP Archive
+async function loadZipFile(file) {
+    if (typeof JSZip === "undefined") {
+        log("JSZip library not loaded yet. Please try again.", "err");
+        return;
+    }
+
+    try {
+        log(`Reading ZIP archive: ${file.name}...`, "info");
+        const zip = await JSZip.loadAsync(file);
+        const newTabs = [];
+
+        // 1. Extract all .c files
+        for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
+            if (zipEntry.dir) continue;
+            const basename = relativePath.split("/").pop();
+
+            if (basename.endsWith(".c")) {
+                const text = await zipEntry.async("text");
+                newTabs.push({
+                    id: "tab_" + Math.random().toString(36).substring(2, 9),
+                    name: basename,
+                    type: "c",
+                    code: text
+                });
+            }
+        }
+
+        // 2. Extract main.js
+        let foundJs = false;
+        for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
+            if (zipEntry.dir) continue;
+            const basename = relativePath.split("/").pop();
+
+            if (basename === "main.js") {
+                const text = await zipEntry.async("text");
+                newTabs.push({
+                    id: "main_js",
+                    name: "main.js",
+                    type: "js",
+                    code: text
+                });
+                foundJs = true;
+                break;
+            }
+        }
+
+        if (!foundJs) {
+            // Check if there is another .js file (excluding wash.js)
+            for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
+                if (zipEntry.dir) continue;
+                const basename = relativePath.split("/").pop();
+                if (basename.endsWith(".js") && basename !== "wash.js") {
+                    const text = await zipEntry.async("text");
+                    newTabs.push({
+                        id: "main_js",
+                        name: "main.js",
+                        type: "js",
+                        code: text
+                    });
+                    foundJs = true;
+                    break;
+                }
+            }
+        }
+
+        if (newTabs.length === 0) {
+            log("No .c shader or main.js source files found in ZIP.", "err");
+            return;
+        }
+
+        if (!foundJs) {
+            // Create default main.js orchestrator
+            newTabs.push({
+                id: "main_js",
+                name: "main.js",
+                type: "js",
+                code: `const mem = wash_memory(width * height * 4);
+const firstShaderName = Object.keys(shaders)[0];
+const shader = await wash_load(shaders[firstShaderName], mem);
+
+return function onFrame({ ctx, imgData }) {
+    wash_run(shader, mem, width, height);
+    imgData.data.set(mem.u8);
+    ctx.putImageData(imgData, 0, 0);
+};
+`
+            });
+        }
+
+        tabs = newTabs;
+        switchTab(tabs[0].id);
+        log(`✔ Successfully imported ${newTabs.length} file(s) from ${file.name}!`, "ok");
+        compileAndRun();
+
+    } catch (err) {
+        log(`Failed to read ZIP: ${err.message}`, "err");
+    }
+}
+
+uploadZipBtn.addEventListener("click", () => zipFileInput.click());
+
+zipFileInput.addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    await loadZipFile(file);
+    zipFileInput.value = "";
+});
+
+// Drag and drop ZIP files into Wash Studio
+window.addEventListener("dragover", (e) => e.preventDefault());
+window.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        const file = e.dataTransfer.files[0];
+        if (file.name.endsWith(".zip")) {
+            await loadZipFile(file);
+        }
+    }
+});
+
 // Download Standalone Project ZIP
 downloadBtn.addEventListener("click", async () => {
-    // Save current active tab text
     const current = tabs.find(t => t.id === activeTabId);
     if (current) current.code = codeEditor.value;
 
@@ -333,7 +516,7 @@ downloadBtn.addEventListener("click", async () => {
         return;
     }
 
-    log("Packaging project files into ZIP...", "info");
+    log("Bundling project into ZIP archive...", "info");
     const zip = new JSZip();
 
     // 1. wash.js
@@ -361,14 +544,14 @@ downloadBtn.addEventListener("click", async () => {
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Wash Exported Pipeline</title>
+<title>Wash Standalone Application</title>
 <style>
-  body { background: #111; color: white; font-family: sans-serif; text-align: center; margin: 0; padding: 20px; }
-  canvas { border: 1px solid #444; border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.6); cursor: crosshair; }
+  body { background: #1d2021; color: #ebdbb2; font-family: monospace; text-align: center; margin: 0; padding: 24px; }
+  canvas { border: 1px solid #504945; cursor: crosshair; image-rendering: pixelated; }
 </style>
 </head>
 <body>
-  <h1>Wash Standalone Project</h1>
+  <h2>Wash Project Export</h2>
   <canvas id="viewport" width="${canvas.width}" height="${canvas.height}"></canvas>
 
 <script type="module">
@@ -378,7 +561,6 @@ const canvas = document.querySelector("#viewport");
 const ctx = canvas.getContext("2d");
 const width = canvas.width, height = canvas.height;
 
-// Map shader files
 const shaders = {
 ${cTabs.map(t => `  "${t.name.replace(/\.c$/, '.wasm')}": "./${t.name.replace(/\.c$/, '.wasm')}"`).join(",\n")}
 };
@@ -394,8 +576,7 @@ window.addEventListener("mouseup", () => isMouseDown = 0);
 
 const imgData = ctx.createImageData(width, height);
 
-// Load main.js logic
-${jsTab ? jsTab.code.replace(/shaders\["([^"]+)"\]/g, 'shaders["$1"]') : ""}
+${jsTab ? jsTab.code : ""}
 
 function loop(time) {
     onFrame({ time, mouseX, mouseY, isMouseDown, ctx, imgData });
@@ -417,7 +598,7 @@ ${cTabs.map(t => `\tclang --target=wasm32 -O3 -fno-math-errno -nostdlib -Wl,--im
     // 7. README.md
     zip.file("README.md", `# Exported Wash Project
 
-This project was built and exported directly from **Wash Studio**.
+This project was built and exported from **Wash Studio**.
 
 ## Running Locally:
 1. Start an HTTP server:
@@ -426,7 +607,7 @@ This project was built and exported directly from **Wash Studio**.
    \`\`\`
 2. Open \`http://localhost:8080\` in your browser!
 
-## Compiling C Shaders locally:
+## Compiling C Shaders with Clang:
 \`\`\`bash
 make
 \`\`\`
@@ -439,7 +620,7 @@ make
     a.download = "wash_project.zip";
     a.click();
     URL.revokeObjectURL(url);
-    log("✔ wash_project.zip generated and downloaded!", "ok");
+    log("✔ wash_project.zip successfully downloaded!", "ok");
 });
 
 // Initial load
