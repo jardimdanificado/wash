@@ -49,6 +49,8 @@ body {
   font-size: 13px;
   line-height: 1.5;
   height: 100vh;
+  height: 100dvh;
+  min-height: -webkit-fill-available;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -621,25 +623,91 @@ canvas#viewport {
 .log-entry.ok { color: var(--green-bright); font-weight: 600; }
 .log-entry.err { color: var(--red-bright); font-weight: 600; }
 
-/* Status Bar */
+/* Status Bar (Strict Fixed Height & Mobile Safe) */
 .status-bar {
   background: var(--bg0);
   border-top: 1px solid var(--bg1);
-  padding: 3px 14px;
+  height: 25px;
+  min-height: 25px;
+  max-height: 25px;
+  line-height: 24px;
+  padding: 0 10px;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
   display: flex;
   justify-content: space-between;
   align-items: center;
   font-size: 11px;
   user-select: none;
   position: relative;
-  z-index: 30;
+  z-index: 50;
   color: var(--gray);
   flex-shrink: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.status-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 100%;
+  overflow: hidden;
+}
+
+.status-group-left {
+  flex-shrink: 1;
+}
+
+.status-group-right {
+  flex-shrink: 0;
+}
+
+.status-item {
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 #statusMsg {
   color: var(--green-bright);
   font-weight: 600;
+}
+
+#cursorPos {
+  color: var(--fg2);
+}
+
+.status-essential {
+  flex-shrink: 0 !important;
+  white-space: nowrap;
+}
+
+/* Progressive Responsiveness (Hide least important info first) */
+@media (max-width: 680px) {
+  .status-item-filecount {
+    display: none !important;
+  }
+}
+
+@media (max-width: 520px) {
+  .status-item-lang {
+    display: none !important;
+  }
+  .status-group {
+    gap: 6px;
+  }
+}
+
+@media (max-width: 390px) {
+  .status-item-msg {
+    display: none !important;
+  }
+  .status-bar {
+    padding: 0 6px;
+  }
+  .status-group {
+    gap: 4px;
+  }
 }
 
 /* Modals */

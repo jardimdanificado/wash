@@ -63,20 +63,20 @@
     </div>
   </div>
 
-  <!-- Status Bar -->
-  <div class="status-bar">
-    <div style="display:flex; align-items:center; gap:14px;">
-      <span id="statusMsg">READY</span>
-      <span id="workspaceStats" style="color:var(--fg4); font-size:11px;">3 files</span>
-      <button id="statusBarConsoleBtn" class="status-btn" title="Toggle Console Logs Drawer">Console</button>
-      <button id="statusBarViewportBtn" class="status-btn" title="Toggle Floating Viewport">Viewport</button>
+  <!-- Status Bar (Fixed Height & Mobile-Safe) -->
+  <footer class="status-bar">
+    <div class="status-group status-group-left">
+      <span id="statusMsg" class="status-item status-item-msg">READY</span>
+      <span id="workspaceStats" class="status-item status-item-filecount">3 files</span>
+      <button id="statusBarConsoleBtn" class="status-btn status-essential" title="Toggle Console Logs Drawer">Console</button>
+      <button id="statusBarViewportBtn" class="status-btn status-essential" title="Toggle Floating Viewport">Viewport</button>
     </div>
-    <div style="display:flex; align-items:center; gap:14px;">
-      <button id="statusBarActionsBtn" class="status-btn status-btn-highlight" title="Open Actions Palette (Ctrl+Shift+P)">ACTIONS</button>
-      <span id="editorLanguage" style="color:var(--fg4); font-size:11px;">C</span>
-      <span id="cursorPos" style="color:var(--fg2); font-size:11px;">Ln 1, Col 1</span>
+    <div class="status-group status-group-right">
+      <button id="statusBarActionsBtn" class="status-btn status-btn-highlight status-essential" title="Open Actions Palette (Ctrl+Shift+P)">ACTIONS</button>
+      <span id="editorLanguage" class="status-item status-item-lang">C</span>
+      <span id="cursorPos" class="status-item status-item-cursor status-essential">Ln 1, Col 1</span>
     </div>
-  </div>
+  </footer>
 
   <!-- Command Palette Modal (Ctrl+Shift+P / F1) -->
   <div id="commandPaletteModal" class="modal-backdrop command-palette-backdrop" style="display: none;">
