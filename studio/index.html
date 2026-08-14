@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wash Studio - Multi-Shader C to WebAssembly IDE</title>
+  <link rel="stylesheet" href="studio.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span>WASH</span>
+      <span class="logo-badge">Studio</span>
+    </div>
+
+    <div class="toolbar">
+      <select id="presetSelect" class="dropdown">
+        <option value="pipeline">01. Shared Memory Pipeline (2 Shaders)</option>
+        <option value="pathtracer">02. Monte Carlo Path Tracer (3D)</option>
+        <option value="fractal">03. Interactive Julia Fractal</option>
+        <option value="gradient">04. Simple Gradient</option>
+      </select>
+
+      <button id="compileBtn" class="btn btn-primary">▶ Compile & Run <span style="opacity:0.7; font-size:0.75rem;">(Ctrl+Enter)</span></button>
+      <button id="downloadBtn" class="btn btn-green">📦 Download ZIP</button>
+    </div>
+  </header>
+
+  <div class="main-layout">
+    <!-- Left: Multi-tab Code Editor -->
+    <div class="editor-pane">
+      <div class="tab-bar">
+        <div id="tabList" style="display:flex; align-items:center;"></div>
+        <button id="addTabBtn" class="tab-add-btn" title="Add another C shader tab">+ Add C Shader</button>
+      </div>
+
+      <div class="editor-container">
+        <textarea id="codeEditor" class="code-editor" spellcheck="false" placeholder="// Write C shader or JS pipeline code here..."></textarea>
+      </div>
+    </div>
+
+    <!-- Right: Viewport Canvas & Console -->
+    <div class="preview-pane">
+      <div class="viewport-header">
+        <span style="font-weight:600; color:#cbd5e1;">Viewport (600x400)</span>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <span id="fpsStat" style="color:#10b981; font-weight:bold;">0.0</span> FPS
+          <button id="playPauseBtn" class="btn" style="padding:2px 8px; font-size:0.75rem;">⏸ Pause</button>
+        </div>
+      </div>
+
+      <div class="viewport-container">
+        <canvas id="viewport" width="600" height="400"></canvas>
+      </div>
+
+      <div class="console-pane">
+        <div class="console-header">
+          <span>Build & Runtime Console</span>
+          <button id="clearLogsBtn" class="btn" style="padding:2px 6px; font-size:0.7rem;">Clear</button>
+        </div>
+        <div id="consoleOutput" class="console-output"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-bar">
+    <span id="statusMsg">Ready</span>
+    <span>In-Browser XCC Wasm Compiler • WebAssembly Shared Memory Pipeline</span>
+  </div>
+
+  <script type="module" src="studio.js"></script>
+</body>
+</html>
