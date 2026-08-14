@@ -1,31 +1,39 @@
 import { wash_memory, wash_load, wash_run, wash_worker, makeWasmImportMemory } from "../wash.js";
 import { PRESETS } from "./presets.js";
-import { TOOL_PRESETS } from "./tools/presets.js";
 import { compileJsToC } from "./tools/porffor.js";
 import { wasmToWat, watToWasm, wasmDecompile } from "./tools/wabt.js";
 import { optimizeWasm } from "./tools/binaryen.js";
-import { inspectWasm, instantiateWasm } from "./tools/runner.js";
 
 // =============================================================================
 // DOM Elements
 // =============================================================================
 const tabList = document.querySelector("#tabList");
-const addTabBtn = document.querySelector("#addTabBtn");
 const monacoHost = document.querySelector("#monacoEditorContainer");
-const compileBtn = document.querySelector("#compileBtn");
-const downloadBtn = document.querySelector("#downloadBtn");
-const uploadZipBtn = document.querySelector("#uploadZipBtn");
+const consoleDrawer = document.querySelector("#consoleDrawer");
+const consoleBadge = document.querySelector("#consoleBadge");
+const toggleConsoleDrawerBtn = document.querySelector("#toggleConsoleDrawerBtn");
+const statusBarConsoleBtn = document.querySelector("#statusBarConsoleBtn");
+const statusBarViewportBtn = document.querySelector("#statusBarViewportBtn");
+const statusBarActionsBtn = document.querySelector("#statusBarActionsBtn");
+const floatingViewport = document.querySelector("#floatingViewport");
+const floatingHeader = document.querySelector("#floatingHeader");
+const floatingFps = document.querySelector("#floatingFps");
+const floatingMinimizeBtn = document.querySelector("#floatingMinimizeBtn");
+const floatingResizeBtn = document.querySelector("#floatingResizeBtn");
 const zipFileInput = document.querySelector("#zipFileInput");
-const presetsBtn = document.querySelector("#presetsBtn");
-const closePresetsBtn = document.querySelector("#closePresetsBtn");
 const presetsModal = document.querySelector("#presetsModal");
+const closePresetsBtn = document.querySelector("#closePresetsBtn");
+const brandBtn = document.querySelector("#brandBtn");
+const commandPaletteBtn = document.querySelector("#commandPaletteBtn");
+const commandPaletteModal = document.querySelector("#commandPaletteModal");
+const commandPaletteInput = document.querySelector("#commandPaletteInput");
+const commandPaletteList = document.querySelector("#commandPaletteList");
 const playPauseBtn = document.querySelector("#playPauseBtn");
 const clearLogsBtn = document.querySelector("#clearLogsBtn");
 const copyLogsBtn = document.querySelector("#copyLogsBtn");
 const consoleOutput = document.querySelector("#consoleOutput");
 const canvas = document.querySelector("#viewport");
 const ctx = canvas.getContext("2d");
-const fpsStat = document.querySelector("#fpsStat");
 const statusMsg = document.querySelector("#statusMsg");
 const workspaceStats = document.querySelector("#workspaceStats");
 const cursorPos = document.querySelector("#cursorPos");
@@ -36,33 +44,16 @@ const docsBtn = document.querySelector("#docsBtn");
 const closeDocsBtn = document.querySelector("#closeDocsBtn");
 const docsModal = document.querySelector("#docsModal");
 
-// Tools Modal
-const toolsBtn = document.querySelector("#toolsBtn");
-const closeToolsBtn = document.querySelector("#closeToolsBtn");
-const toolsModal = document.querySelector("#toolsModal");
-const toolsTabs = document.querySelectorAll(".tools-tab");
-const toolPanes = document.querySelectorAll(".tool-pane");
-
-// Quick Actions
-const btnQuickInspect = document.querySelector("#btnQuickInspect");
-const btnQuickWat = document.querySelector("#btnQuickWat");
-const btnQuickOpt = document.querySelector("#btnQuickOpt");
-
 // File Explorer (VFS)
-const toggleSidebarBtn = document.querySelector("#toggleSidebarBtn");
 const fileExplorer = document.querySelector("#fileExplorer");
 const vfsTreeContainer = document.querySelector("#vfsTreeContainer");
-const vfsNewFileBtn = document.querySelector("#vfsNewFileBtn");
-const vfsNewFolderBtn = document.querySelector("#vfsNewFolderBtn");
-const vfsExportZipBtn = document.querySelector("#vfsExportZipBtn");
 const vfsDropZone = document.querySelector("#vfsDropZone");
 
 // =============================================================================
 // State Management
 // =============================================================================
-// VFS Map: cleanPath -> { path: string, name: string, type: 'c'|'js'|'wat'|'wasm'|'other', content: string|Uint8Array, isBinary: boolean, model: monaco.editor.ITextModel }
-const vfs = new Map();
-const folderCollapsedState = new Map(); // folderPath -> boolean
+const vfs = new Map(); // cleanPath -> { path, name, type, content, isBinary, model }
+const folderCollapsedState = new Map();
 let openTabs = [];
 let activeFilePath = null;
 let compiledShaders = {}; // filename -> Uint8Array
@@ -103,17 +94,19 @@ function clearLogs() {
 clearLogsBtn?.addEventListener("click", clearLogs);
 
 copyLogsBtn?.addEventListener("click", () => {
-    const text = Array.from(consoleOutput.children).map(c => c.textContent).join("\n");
-    if (!text) return;
+    const logsText = Array.from(consoleOutput.children).map(c => c.textContent).join("\n");
+    if (!logsText) return;
 
     if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(() => {
+        navigator.clipboard.writeText(logsText).then(() => {
             const oldText = copyLogsBtn.textContent;
-            copyLogsBtn.textContent = "✔ COPIED!";
+            copyLogsBtn.textContent = "COPIED!";
             setTimeout(() => copyLogsBtn.textContent = oldText, 1500);
-        }).catch(() => fallbackCopy(text));
+        }).catch(() => {
+            fallbackCopy(logsText);
+        });
     } else {
-        fallbackCopy(text);
+        fallbackCopy(logsText);
     }
 });
 
@@ -124,12 +117,14 @@ function fallbackCopy(text) {
     ta.style.opacity = "0";
     document.body.appendChild(ta);
     ta.select();
-    document.execCommand("copy");
+    try {
+        document.execCommand("copy");
+        if (copyLogsBtn) {
+            copyLogsBtn.textContent = "COPIED!";
+            setTimeout(() => copyLogsBtn.textContent = "COPY", 1500);
+        }
+    } catch (err) {}
     document.body.removeChild(ta);
-    if (copyLogsBtn) {
-        copyLogsBtn.textContent = "✔ COPIED!";
-        setTimeout(() => copyLogsBtn.textContent = "📋 COPY", 1500);
-    }
 }
 
 // =============================================================================
@@ -167,7 +162,6 @@ async function initMonaco() {
 function setupMonaco(monaco) {
     monacoApi = monaco;
 
-    // Define custom Gruvbox Dark Theme for Monaco
     monaco.editor.defineTheme("gruvbox-dark", {
         base: "vs-dark",
         inherit: true,
@@ -214,20 +208,27 @@ function setupMonaco(monaco) {
         renderLineHighlight: "all"
     });
 
-    // Cursor position tracking
     monacoEditor.onDidChangeCursorPosition((e) => {
         if (cursorPos) {
             cursorPos.textContent = `Ln ${e.position.lineNumber}, Col ${e.position.column}`;
         }
     });
 
-    // Compilation Shortcuts inside Monaco: Ctrl+Enter / Cmd+Enter & Ctrl+S / Cmd+S
+    // Monaco Keyboard shortcuts
     monacoEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
         compileAndRun();
     });
 
     monacoEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
         compileAndRun();
+    });
+
+    monacoEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyP, () => {
+        openCommandPalette();
+    });
+
+    monacoEditor.addCommand(monaco.KeyCode.F1, () => {
+        openCommandPalette();
     });
 }
 
@@ -493,42 +494,90 @@ function closeTab(path) {
     }
 }
 
-// Sidebar Toggle
-toggleSidebarBtn?.addEventListener("click", () => {
-    fileExplorer.classList.toggle("collapsed");
-    setTimeout(() => monacoEditor?.layout(), 180);
-});
 
-// VFS New File & New Folder
-vfsNewFileBtn?.addEventListener("click", () => {
-    const filename = prompt("Enter new filename (e.g. shader2.c, helper.js, module.wat):", "shader2.c");
-    if (!filename || !filename.trim()) return;
-    const clean = filename.trim().replace(/^\/+/, "");
-    if (vfs.has(clean)) {
-        alert("A file with this name already exists.");
-        return;
-    }
-    const defaultContent = clean.endsWith(".c")
-        ? `#include <stdint.h>\n\n__attribute__((export_name("_start")))\nuint32_t _start(uint8_t* pixels, uint32_t width, uint32_t height) {\n    return 1;\n}\n`
-        : clean.endsWith(".js")
-        ? `// wash pipeline script\nreturn function onFrame({ ctx, imgData }) {};\n`
-        : "";
-    vfsSetFile(clean, defaultContent);
-    openFileInEditor(clean);
-});
-
-vfsNewFolderBtn?.addEventListener("click", () => {
-    const folder = prompt("Enter folder name:", "shaders");
-    if (!folder || !folder.trim()) return;
-    const clean = folder.trim().replace(/\/+$/, "").replace(/^\/+/, "");
-    const placeholder = `${clean}/readme.txt`;
-    vfsSetFile(placeholder, `Folder: ${clean}`);
-});
-
-vfsExportZipBtn?.addEventListener("click", () => downloadBtn.click());
 
 // =============================================================================
-// Editor & Tab Synchronization
+// Floating Viewport & Console Drawer Controls
+// =============================================================================
+function toggleConsole(forceOpen = null) {
+    if (!consoleDrawer) return;
+    const shouldOpen = forceOpen !== null ? forceOpen : consoleDrawer.classList.contains("collapsed");
+    consoleDrawer.classList.toggle("collapsed", !shouldOpen);
+    setTimeout(() => monacoEditor?.layout(), 200);
+}
+
+function toggleFloatingViewport(forceOpen = null) {
+    if (!floatingViewport) return;
+    const isHidden = floatingViewport.style.display === "none";
+    const shouldOpen = forceOpen !== null ? forceOpen : isHidden;
+    
+    if (shouldOpen) {
+        floatingViewport.style.display = "flex";
+        isPlaying = true;
+        if (playPauseBtn) playPauseBtn.textContent = "PAUSE";
+        startRenderLoop();
+    } else {
+        floatingViewport.style.display = "none";
+        isPlaying = false;
+        if (animFrameId) cancelAnimationFrame(animFrameId);
+        if (playPauseBtn) playPauseBtn.textContent = "PLAY";
+    }
+}
+
+// Floating Viewport Draggable Engine
+let isDragging = false;
+let dragStartX = 0, dragStartY = 0;
+let winStartX = 0, winStartY = 0;
+
+floatingHeader?.addEventListener("mousedown", (e) => {
+    if (e.target.closest("button")) return; // Don't drag when clicking buttons
+    isDragging = true;
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+    
+    const rect = floatingViewport.getBoundingClientRect();
+    winStartX = rect.left;
+    winStartY = rect.top;
+    
+    // Switch from right-anchored to left/top anchored
+    floatingViewport.style.right = "auto";
+    floatingViewport.style.left = `${winStartX}px`;
+    floatingViewport.style.top = `${winStartY}px`;
+    e.preventDefault();
+});
+
+window.addEventListener("mousemove", (e) => {
+    if (!isDragging || !floatingViewport) return;
+    const deltaX = e.clientX - dragStartX;
+    const deltaY = e.clientY - dragStartY;
+    
+    const newX = Math.max(10, Math.min(window.innerWidth - 100, winStartX + deltaX));
+    const newY = Math.max(30, Math.min(window.innerHeight - 60, winStartY + deltaY));
+    
+    floatingViewport.style.left = `${newX}px`;
+    floatingViewport.style.top = `${newY}px`;
+});
+
+window.addEventListener("mouseup", () => {
+    isDragging = false;
+});
+
+floatingMinimizeBtn?.addEventListener("click", () => toggleFloatingViewport(false));
+floatingResizeBtn?.addEventListener("click", () => {
+    floatingViewport?.classList.toggle("expanded");
+});
+
+statusBarViewportBtn?.addEventListener("click", () => {
+    const isHidden = floatingViewport?.style.display === "none";
+    toggleFloatingViewport(isHidden);
+});
+
+statusBarActionsBtn?.addEventListener("click", openCommandPalette);
+toggleConsoleDrawerBtn?.addEventListener("click", () => toggleConsole(false));
+statusBarConsoleBtn?.addEventListener("click", () => toggleConsole());
+
+// =============================================================================
+// Editor Tab Synchronization
 // =============================================================================
 function renderTabs() {
     tabList.innerHTML = "";
@@ -571,33 +620,13 @@ function switchTab(newPath) {
         if (editorLanguage) {
             editorLanguage.textContent = getMonacoLanguage(file.name).toUpperCase();
         }
+        setTimeout(() => monacoEditor.layout(), 30);
     }
 
     renderTabs();
 }
 
-addTabBtn?.addEventListener("click", () => {
-    const cFiles = Array.from(vfs.keys()).filter(k => k.endsWith(".c"));
-    const name = `shader${cFiles.length + 1}.c`;
-    const defaultCode = `#include <stdint.h>
 
-__attribute__((export_name("_start")))
-void* _start(uint8_t* pixels, uint32_t width, uint32_t height) {
-    for (uint32_t y = 0; y < height; ++y) {
-        for (uint32_t x = 0; x < width; ++x) {
-            uint32_t off = (y * width + x) * 4;
-            pixels[off + 0] = (uint8_t)((x * 255) / width);
-            pixels[off + 1] = 160;
-            pixels[off + 2] = (uint8_t)((y * 255) / height);
-            pixels[off + 3] = 255;
-        }
-    }
-    return 0;
-}
-`;
-    vfsSetFile(name, defaultCode);
-    openFileInEditor(name);
-});
 
 // =============================================================================
 // Presets Loader
@@ -606,7 +635,6 @@ function loadPreset(presetKey) {
     const preset = PRESETS[presetKey];
     if (!preset) return;
 
-    // Dispose previous Monaco models and clear VFS
     activeFilePath = null;
     vfs.forEach(f => { if (f.model) f.model.dispose(); });
     vfs.clear();
@@ -635,7 +663,6 @@ function loadPreset(presetKey) {
     log(`Preset loaded: ${preset.name}`, "info");
     compileAndRun();
 }
-
 
 // =============================================================================
 // Compiler Worker & Compilation Pipeline
@@ -683,7 +710,6 @@ async function compileAndRun() {
     log("Starting multi-shader compilation pipeline...", "info");
     statusMsg.textContent = "COMPILING...";
     statusMsg.style.color = "var(--yellow-bright)";
-    compileBtn.disabled = true;
 
     if (animFrameId) cancelAnimationFrame(animFrameId);
     currentOnFrame = null;
@@ -709,12 +735,11 @@ async function compileAndRun() {
                 model: null
             });
 
-            log(`✔ ${res.outFileName} built successfully (${importedBytes.byteLength} B)`, "ok");
+            log(`[OK] ${res.outFileName} built successfully (${importedBytes.byteLength} B)`, "ok");
         }
 
         renderVfsTree();
         updateWorkspaceStats();
-        updateToolShadersDropdowns();
 
         // Map compiled shaders to URLs for wash_load
         const shaderBlobs = {};
@@ -723,7 +748,6 @@ async function compileAndRun() {
             shaderBlobs[name] = URL.createObjectURL(blob);
         }
 
-        // Find main.js or any JS entry point in VFS
         let jsFile = vfs.get("main.js");
         if (!jsFile) {
             const allJs = Array.from(vfs.values()).filter(f => f.type === "js");
@@ -760,26 +784,34 @@ async function compileAndRun() {
             ctx
         );
 
-        log("✔ Pipeline running at 60 FPS!", "ok");
+        log("[OK] Pipeline running at 60 FPS!", "ok");
         statusMsg.textContent = "RUNNING";
         statusMsg.style.color = "var(--green-bright)";
+        if (consoleBadge) consoleBadge.textContent = "RUNNING";
+        toggleFloatingViewport(true);
         startRenderLoop();
 
     } catch (err) {
         log(`❌ Error: ${err.message}`, "err");
         statusMsg.textContent = "ERROR";
         statusMsg.style.color = "var(--red-bright)";
-    } finally {
-        compileBtn.disabled = false;
+        if (consoleBadge) consoleBadge.textContent = "ERROR";
+        toggleConsole(true);
     }
 }
-
-compileBtn.addEventListener("click", compileAndRun);
 
 window.addEventListener("keydown", (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
         e.preventDefault();
         compileAndRun();
+    }
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === "P" || e.key === "p")) {
+        e.preventDefault();
+        openCommandPalette();
+    }
+    if (e.key === "F1") {
+        e.preventDefault();
+        openCommandPalette();
     }
 });
 
@@ -808,7 +840,7 @@ function startRenderLoop() {
             const now = performance.now();
             if (now - lastFpsTime >= 500) {
                 const fps = (framesCount * 1000) / (now - lastFpsTime);
-                fpsStat.textContent = fps.toFixed(1);
+                if (floatingFps) floatingFps.textContent = fps.toFixed(0) + " FPS";
                 framesCount = 0;
                 lastFpsTime = now;
             }
@@ -816,6 +848,7 @@ function startRenderLoop() {
             log(`Runtime error: ${err.message}`, "err");
             statusMsg.textContent = "RUNTIME ERROR";
             statusMsg.style.color = "var(--red-bright)";
+            toggleConsole(true);
             return;
         }
 
@@ -825,9 +858,9 @@ function startRenderLoop() {
     animFrameId = requestAnimationFrame(loop);
 }
 
-playPauseBtn.addEventListener("click", () => {
+playPauseBtn?.addEventListener("click", () => {
     isPlaying = !isPlaying;
-    playPauseBtn.textContent = isPlaying ? "PAUSE" : "RESUME";
+    playPauseBtn.textContent = isPlaying ? "⏸" : "▶";
     if (isPlaying) startRenderLoop();
 });
 
@@ -877,16 +910,15 @@ async function loadZipArchive(file) {
 
         activeFilePath = openTabs[0];
         switchTab(activeFilePath);
-        log(`✔ Successfully imported ${vfs.size} file(s) from ${file.name}!`, "ok");
+        log(`[OK] Successfully imported ${vfs.size} file(s) from ${file.name}!`, "ok");
         compileAndRun();
 
     } catch (err) {
-        log(`Failed to read ZIP: ${err.message}`, "err");
+        log(`[ERROR] Failed to read ZIP: ${err.message}`, "err");
     }
 }
 
-uploadZipBtn.addEventListener("click", () => zipFileInput.click());
-zipFileInput.addEventListener("change", async (e) => {
+zipFileInput?.addEventListener("change", async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     await loadZipArchive(file);
@@ -911,12 +943,40 @@ window.addEventListener("drop", async (e) => {
             const text = await file.text();
             vfsSetFile(file.name, text);
             openFileInEditor(file.name);
-            log(`Imported ${file.name} to workspace.`, "ok");
+            log(`[OK] Imported ${file.name} to workspace.`, "ok");
         }
     }
 });
 
-downloadBtn.addEventListener("click", async () => {
+function toggleSidebar() {
+    fileExplorer.classList.toggle("collapsed");
+    setTimeout(() => monacoEditor?.layout(), 180);
+}
+
+function createNewCShader() {
+    const cFiles = Array.from(vfs.keys()).filter(k => k.endsWith(".c"));
+    const name = `shader${cFiles.length + 1}.c`;
+    const defaultCode = `#include <stdint.h>
+
+__attribute__((export_name("_start")))
+void* _start(uint8_t* pixels, uint32_t width, uint32_t height) {
+    for (uint32_t y = 0; y < height; ++y) {
+        for (uint32_t x = 0; x < width; ++x) {
+            uint32_t off = (y * width + x) * 4;
+            pixels[off + 0] = (uint8_t)((x * 255) / width);
+            pixels[off + 1] = 160;
+            pixels[off + 2] = (uint8_t)((y * 255) / height);
+            pixels[off + 3] = 255;
+        }
+    }
+    return 0;
+}
+`;
+    vfsSetFile(name, defaultCode);
+    openFileInEditor(name);
+}
+
+async function exportWorkspaceZip() {
     if (typeof JSZip === "undefined") {
         alert("JSZip library is still loading.");
         return;
@@ -925,15 +985,12 @@ downloadBtn.addEventListener("click", async () => {
     log("Bundling workspace into ZIP archive...", "info");
     const zip = new JSZip();
 
-    // 1. VFS files
     for (const [path, file] of vfs.entries()) {
         zip.file(path, file.content);
     }
 
-    // 2. wash.js
     zip.file("wash.js", washJsSource || "// wash.js");
 
-    // 3. Standalone HTML
     const cFiles = Array.from(vfs.values()).filter(f => f.type === "c" && f.name.endsWith(".c"));
     const jsFile = vfs.get("main.js") || Array.from(vfs.values()).find(f => f.type === "js");
 
@@ -988,7 +1045,6 @@ requestAnimationFrame(loop);
 `;
     zip.file("index.html", htmlContent);
 
-    // 4. Makefile
     const makefileContent = `build:
 ${cFiles.map(t => `\tclang --target=wasm32 -O3 -fno-math-errno -nostdlib -Wl,--import-memory -Wl,--export=__heap_base -Wl,--export=_start ${t.name} -o ${t.name.replace(/\.c$/, '.wasm')}`).join("\n")}
 `;
@@ -1001,33 +1057,667 @@ ${cFiles.map(t => `\tclang --target=wasm32 -O3 -fno-math-errno -nostdlib -Wl,--i
     a.download = "wash_workspace.zip";
     a.click();
     URL.revokeObjectURL(url);
-    log("✔ wash_workspace.zip successfully downloaded!", "ok");
+    log("[OK] wash_workspace.zip successfully downloaded!", "ok");
+}
+
+async function runBinaryenOptimizationOnActiveFile(level) {
+    const wasmBytes = await getActiveWasmBytes();
+    if (!wasmBytes) return;
+
+    try {
+        log(`[BINARYEN] Running wasm-opt (-${level})...`, "info");
+        const res = await optimizeWasm(wasmBytes, { level });
+        
+        const activeFile = activeFilePath ? vfs.get(activeFilePath) : null;
+        const wasmName = activeFile ? activeFile.name.replace(/\.c$/, ".wasm") : "shader.wasm";
+
+        compiledShaders[wasmName] = res.optimizedBytes;
+        vfsSetFile(wasmName, res.optimizedBytes, true);
+
+        log(`[OK] Binaryen: ${wasmName} optimized! ${res.ratio}`, "ok");
+        alert(`[OK] wasm-opt (-${level}) successful!\nOriginal size: ${res.originalSize} B\nOptimized size: ${res.optimizedSize} B (${res.ratio})`);
+    } catch (err) {
+        log(`[ERROR] Binaryen: ${err.message}`, "err");
+    }
+}
+
+// =============================================================================
+// Command Palette & Tool Actions Engine (Ctrl+Shift+P / F1)
+// =============================================================================
+const COMMAND_REGISTRY = [
+    // --- PORFFOR ACTIONS ---
+    {
+        id: "porffor_transpile_c",
+        category: "Porffor",
+        catClass: "cat-porffor",
+        title: "Transpile Current JS to C Code",
+        shortcut: "",
+        action: async () => {
+            const activeFile = activeFilePath ? vfs.get(activeFilePath) : null;
+            if (!activeFile) { alert("No file currently open."); return; }
+            try {
+                log(`[PORFFOR] Transpiling ${activeFile.name} to C...`, "info");
+                const code = typeof activeFile.content === "string" ? activeFile.content : "";
+                const res = await compileJsToC(code);
+                const outName = activeFile.name.replace(/\.[^/.]+$/, "") + "_porffor.c";
+                vfsSetFile(outName, res.cCode);
+                openFileInEditor(outName);
+                log(`[OK] Porffor: Generated and opened ${outName}`, "ok");
+            } catch (err) {
+                log(`[ERROR] Porffor: ${err.message}`, "err");
+            }
+        }
+    },
+    {
+        id: "porffor_compile_wasm",
+        category: "Porffor",
+        catClass: "cat-porffor",
+        title: "Compile Current JS directly to WASM Binary",
+        shortcut: "",
+        action: async () => {
+            const activeFile = activeFilePath ? vfs.get(activeFilePath) : null;
+            if (!activeFile) { alert("No file currently open."); return; }
+            try {
+                log(`[PORFFOR] Compiling ${activeFile.name} to WASM binary...`, "info");
+                const code = typeof activeFile.content === "string" ? activeFile.content : "";
+                const res = await compileJsToC(code);
+                // Compile C to WASM using compiler worker
+                const outWasmName = activeFile.name.replace(/\.[^/.]+$/, "") + ".wasm";
+                const xccRes = await compileShader(activeFile.name, res.cCode);
+                const importedBytes = makeWasmImportMemory(xccRes.wasmBytes);
+                vfsSetFile(outWasmName, new Uint8Array(importedBytes), true);
+                compiledShaders[outWasmName] = new Uint8Array(importedBytes);
+                log(`[OK] Porffor+XCC: Generated ${outWasmName} (${importedBytes.byteLength} B)`, "ok");
+            } catch (err) {
+                log(`[ERROR] Porffor WASM: ${err.message}`, "err");
+            }
+        }
+    },
+
+    // --- BINARYEN (wasm-opt) ACTIONS ---
+    {
+        id: "binaryen_opt_o3",
+        category: "Binaryen",
+        catClass: "cat-binaryen",
+        title: "wasm-opt: Optimize Current Shader (-O3 Maximum Speed)",
+        shortcut: "",
+        action: async () => { await runBinaryenOptimizationOnActiveFile("O3"); }
+    },
+    {
+        id: "binaryen_opt_o2",
+        category: "Binaryen",
+        catClass: "cat-binaryen",
+        title: "wasm-opt: Optimize Current Shader (-O2 Standard Optimization)",
+        shortcut: "",
+        action: async () => { await runBinaryenOptimizationOnActiveFile("O2"); }
+    },
+    {
+        id: "binaryen_opt_o1",
+        category: "Binaryen",
+        catClass: "cat-binaryen",
+        title: "wasm-opt: Optimize Current Shader (-O1 Quick Optimization)",
+        shortcut: "",
+        action: async () => { await runBinaryenOptimizationOnActiveFile("O1"); }
+    },
+    {
+        id: "binaryen_opt_oz",
+        category: "Binaryen",
+        catClass: "cat-binaryen",
+        title: "wasm-opt: Optimize Current Shader (-Oz Aggressive Size Reduction)",
+        shortcut: "",
+        action: async () => { await runBinaryenOptimizationOnActiveFile("Oz"); }
+    },
+    {
+        id: "binaryen_opt_os",
+        category: "Binaryen",
+        catClass: "cat-binaryen",
+        title: "wasm-opt: Optimize Current Shader (-Os Size Reduction)",
+        shortcut: "",
+        action: async () => { await runBinaryenOptimizationOnActiveFile("Os"); }
+    },
+
+    // --- WABT ACTIONS ---
+    {
+        id: "wabt_wasm2wat",
+        category: "WABT",
+        catClass: "cat-wabt",
+        title: "wasm2wat: Disassemble Current Shader to WebAssembly Text (.wat)",
+        shortcut: "",
+        action: async () => {
+            const wasmBytes = await getActiveWasmBytes();
+            if (!wasmBytes) return;
+            try {
+                log("[WABT] Disassembling WASM to WAT...", "info");
+                const wat = await wasmToWat(wasmBytes, { foldExprs: false });
+                const baseName = activeFilePath ? activeFilePath.replace(/\.[^/.]+$/, "") : "shader";
+                const outName = `${baseName}.wat`;
+                vfsSetFile(outName, wat);
+                openFileInEditor(outName);
+                log(`[OK] WABT: Created and opened ${outName}`, "ok");
+            } catch (err) {
+                log(`[ERROR] wasm2wat: ${err.message}`, "err");
+            }
+        }
+    },
+    {
+        id: "wabt_wasm2wat_folded",
+        category: "WABT",
+        catClass: "cat-wabt",
+        title: "wasm2wat: Disassemble to WAT (Folded S-Expressions)",
+        shortcut: "",
+        action: async () => {
+            const wasmBytes = await getActiveWasmBytes();
+            if (!wasmBytes) return;
+            try {
+                log("[WABT] Disassembling WASM to folded S-Expressions...", "info");
+                const wat = await wasmToWat(wasmBytes, { foldExprs: true });
+                const baseName = activeFilePath ? activeFilePath.replace(/\.[^/.]+$/, "") : "shader";
+                const outName = `${baseName}_folded.wat`;
+                vfsSetFile(outName, wat);
+                openFileInEditor(outName);
+                log(`[OK] WABT: Created and opened ${outName}`, "ok");
+            } catch (err) {
+                log(`[ERROR] wasm2wat: ${err.message}`, "err");
+            }
+        }
+    },
+    {
+        id: "wabt_decompile",
+        category: "WABT",
+        catClass: "cat-wabt",
+        title: "wasm-decompile: Decompile Current Shader to C-like Pseudo Code",
+        shortcut: "",
+        action: async () => {
+            const wasmBytes = await getActiveWasmBytes();
+            if (!wasmBytes) return;
+            try {
+                log("[WABT] Decompiling WASM to pseudo-C...", "info");
+                const decomp = await wasmDecompile(wasmBytes);
+                const baseName = activeFilePath ? activeFilePath.replace(/\.[^/.]+$/, "") : "shader";
+                const outName = `${baseName}.decomp.c`;
+                vfsSetFile(outName, decomp);
+                openFileInEditor(outName);
+                log(`[OK] WABT: Created and opened ${outName}`, "ok");
+            } catch (err) {
+                log(`[ERROR] wasm-decompile: ${err.message}`, "err");
+            }
+        }
+    },
+    {
+        id: "wabt_wat2wasm",
+        category: "WABT",
+        catClass: "cat-wabt",
+        title: "wat2wasm: Compile Current WAT to WASM Binary",
+        shortcut: "",
+        action: async () => {
+            const activeFile = activeFilePath ? vfs.get(activeFilePath) : null;
+            if (!activeFile || activeFile.type !== "wat") {
+                alert("Please open a .wat file to compile to WASM.");
+                return;
+            }
+            try {
+                log(`[WABT] Compiling ${activeFile.name} (wat2wasm)...`, "info");
+                const wasmBytes = await watToWasm(activeFile.content);
+                const outName = activeFile.name.replace(/\.wat$/, ".wasm");
+                vfsSetFile(outName, wasmBytes, true);
+                compiledShaders[outName] = wasmBytes;
+                log(`[OK] wat2wasm: Compiled ${outName} (${wasmBytes.byteLength} bytes)`, "ok");
+            } catch (err) {
+                log(`[ERROR] wat2wasm: ${err.message}`, "err");
+            }
+        }
+    },
+
+    // --- RUNNER & INSPECTOR ACTIONS ---
+    {
+        id: "runner_inspect",
+        category: "Inspector",
+        catClass: "cat-binaryen",
+        title: "Inspector: Inspect WASM Structure (Imports, Exports, Memory)",
+        shortcut: "",
+        action: async () => {
+            const wasmBytes = await getActiveWasmBytes();
+            if (!wasmBytes) return;
+            try {
+                log(`[INSPECT] Inspecting WASM binary (${wasmBytes.byteLength} bytes)...`, "info");
+                const module = await WebAssembly.compile(wasmBytes);
+                const imports = WebAssembly.Module.imports(module);
+                const exports = WebAssembly.Module.exports(module);
+
+                log(`=== WASM Structure Summary ===`, "ok");
+                log(`• Binary Size: ${wasmBytes.byteLength} bytes (${(wasmBytes.byteLength / 1024).toFixed(2)} KB)`, "info");
+                log(`• Exported Items (${exports.length}):`, "info");
+                exports.forEach(e => log(`  - [${e.kind}] ${e.name}`, "info"));
+                log(`• Imported Items (${imports.length}):`, "info");
+                imports.forEach(i => log(`  - [${i.kind}] ${i.module}.${i.name}`, "info"));
+                log(`==============================`, "ok");
+            } catch (err) {
+                log(`[ERROR] Inspection: ${err.message}`, "err");
+            }
+        }
+    },
+    {
+        id: "runner_validate",
+        category: "Inspector",
+        catClass: "cat-binaryen",
+        title: "Inspector: Validate WebAssembly Binary (Bytecode Check)",
+        shortcut: "",
+        action: async () => {
+            const wasmBytes = await getActiveWasmBytes();
+            if (!wasmBytes) return;
+            const valid = WebAssembly.validate(wasmBytes);
+            if (valid) {
+                log(`[OK] WebAssembly.validate: Binary bytecode is VALID! (${wasmBytes.byteLength} B)`, "ok");
+            } else {
+                log(`[ERROR] WebAssembly.validate: Invalid WASM bytecode.`, "err");
+            }
+        }
+    },
+    {
+        id: "runner_invoke",
+        category: "Inspector",
+        catClass: "cat-binaryen",
+        title: "Runner: Instantiate & Invoke Exported Function...",
+        shortcut: "",
+        action: async () => {
+            const wasmBytes = await getActiveWasmBytes();
+            if (!wasmBytes) return;
+            try {
+                log(`[INSPECT] Instantiating WASM module for invocation...`, "info");
+                const module = await WebAssembly.compile(wasmBytes);
+                const fnExports = WebAssembly.Module.exports(module).filter(e => e.kind === "function");
+                
+                if (fnExports.length === 0) {
+                    alert("No exported functions found in this WASM binary.");
+                    return;
+                }
+
+                const fnNames = fnExports.map(e => e.name).join(", ");
+                const chosenFn = prompt(`Choose exported function to invoke (${fnNames}):`, fnExports[0].name);
+                if (!chosenFn || !chosenFn.trim()) return;
+
+                const instance = await WebAssembly.instantiate(module, {
+                    env: {
+                        memory: new WebAssembly.Memory({ initial: 16 }),
+                        print: (val) => log(`[env.print] ${val}`, "info"),
+                        abort: () => log(`[env.abort]`, "err")
+                    },
+                    wasi_snapshot_preview1: {
+                        proc_exit: (code) => log(`[WASI proc_exit] ${code}`, "info"),
+                        fd_write: () => 0,
+                        fd_close: () => 0,
+                        fd_seek: () => 0,
+                        fd_read: () => 0
+                    }
+                });
+
+                if (typeof instance.exports[chosenFn.trim()] !== "function") {
+                    alert(`Function "${chosenFn}" not found in exports.`);
+                    return;
+                }
+
+                log(`>> Invoking '${chosenFn}()'...`, "info");
+                const ret = instance.exports[chosenFn.trim()]();
+                log(`<< '${chosenFn}()' returned: ${ret}`, "ok");
+            } catch (err) {
+                log(`[ERROR] Execution: ${err.message}`, "err");
+            }
+        }
+    },
+
+    // --- LAUNDRY WORKSPACE ACTIONS ---
+    {
+        id: "laundry_run",
+        category: "Laundry",
+        catClass: "cat-workspace",
+        title: "Compile & Run Project Pipeline",
+        shortcut: "Ctrl+Enter",
+        action: () => compileAndRun()
+    },
+    {
+        id: "laundry_compile_single",
+        category: "Laundry",
+        catClass: "cat-workspace",
+        title: "Compile Current C Shader Only",
+        shortcut: "",
+        action: async () => {
+            const activeFile = activeFilePath ? vfs.get(activeFilePath) : null;
+            if (!activeFile || activeFile.type !== "c") {
+                alert("Open a .c shader file to compile.");
+                return;
+            }
+            try {
+                log(`Compiling ${activeFile.name}...`, "info");
+                const res = await compileShader(activeFile.name, activeFile.content);
+                const importedBytes = makeWasmImportMemory(res.wasmBytes);
+                vfsSetFile(res.outFileName, new Uint8Array(importedBytes), true);
+                compiledShaders[res.outFileName] = new Uint8Array(importedBytes);
+                log(`[OK] ${res.outFileName} built successfully (${importedBytes.byteLength} B)`, "ok");
+            } catch (err) {
+                log(`[ERROR] Compilation: ${err.message}`, "err");
+            }
+        }
+    },
+    {
+        id: "view_toggle_viewport",
+        category: "View",
+        catClass: "cat-binaryen",
+        title: "Toggle Floating Viewport Window",
+        shortcut: "",
+        action: () => toggleFloatingViewport()
+    },
+    {
+        id: "view_toggle_console",
+        category: "View",
+        catClass: "cat-wabt",
+        title: "Toggle Bottom Console Drawer",
+        shortcut: "",
+        action: () => toggleConsole()
+    },
+    {
+        id: "view_resize_viewport",
+        category: "View",
+        catClass: "cat-workspace",
+        title: "Expand / Reset Floating Viewport Size",
+        shortcut: "",
+        action: () => floatingViewport?.classList.toggle("expanded")
+    },
+    {
+        id: "laundry_presets",
+        category: "Laundry",
+        catClass: "cat-workspace",
+        title: "Browse Example Project Presets...",
+        shortcut: "",
+        action: () => { presetsModal.style.display = "flex"; }
+    },
+    {
+        id: "laundry_export_zip",
+        category: "Laundry",
+        catClass: "cat-workspace",
+        title: "Export Workspace as Standalone ZIP",
+        shortcut: "",
+        action: () => exportWorkspaceZip()
+    },
+    {
+        id: "laundry_import_zip",
+        category: "Laundry",
+        catClass: "cat-workspace",
+        title: "Import Project ZIP Archive...",
+        shortcut: "",
+        action: () => zipFileInput.click()
+    },
+    {
+        id: "laundry_toggle_pause",
+        category: "Laundry",
+        catClass: "cat-workspace",
+        title: "Play / Pause Viewport Animation",
+        shortcut: "",
+        action: () => playPauseBtn.click()
+    },
+    {
+        id: "laundry_clear_logs",
+        category: "Laundry",
+        catClass: "cat-workspace",
+        title: "Clear Console Output",
+        shortcut: "",
+        action: () => clearLogs()
+    },
+    {
+        id: "laundry_copy_logs",
+        category: "Laundry",
+        catClass: "cat-workspace",
+        title: "Copy Console Logs to Clipboard",
+        shortcut: "",
+        action: () => copyLogsBtn.click()
+    },
+    {
+        id: "laundry_docs",
+        category: "Laundry",
+        catClass: "cat-workspace",
+        title: "Open Wash API Documentation",
+        shortcut: "",
+        action: () => { docsModal.style.display = "flex"; }
+    },
+
+    // --- WORKSPACE & FILE MANAGEMENT ---
+    {
+        id: "workspace_new_c",
+        category: "Workspace",
+        catClass: "cat-workspace",
+        title: "Create New C Shader (.c)",
+        shortcut: "",
+        action: () => createNewCShader()
+    },
+    {
+        id: "workspace_new_js",
+        category: "Workspace",
+        catClass: "cat-workspace",
+        title: "Create New JavaScript File (.js)",
+        shortcut: "",
+        action: () => {
+            const name = prompt("Enter JS filename:", "script.js");
+            if (name && name.trim()) {
+                vfsSetFile(name.trim(), `// JavaScript File\nconsole.log("Hello from Wash!");\n`);
+                openFileInEditor(name.trim());
+            }
+        }
+    },
+    {
+        id: "workspace_new_wat",
+        category: "Workspace",
+        catClass: "cat-workspace",
+        title: "Create New WebAssembly Text File (.wat)",
+        shortcut: "",
+        action: () => {
+            const defaultWat = `(module\n  (func (export "add") (param i32 i32) (result i32)\n    local.get 0\n    local.get 1\n    i32.add)\n)`;
+            const name = `module_${Date.now().toString(36).substring(4)}.wat`;
+            vfsSetFile(name, defaultWat);
+            openFileInEditor(name);
+        }
+    },
+    {
+        id: "workspace_new_folder",
+        category: "Workspace",
+        catClass: "cat-workspace",
+        title: "Create New Folder",
+        shortcut: "",
+        action: () => {
+            const folder = prompt("Enter folder name:", "shaders");
+            if (!folder || !folder.trim()) return;
+            const clean = folder.trim().replace(/\/+$/, "").replace(/^\/+/, "");
+            const placeholder = `${clean}/readme.txt`;
+            vfsSetFile(placeholder, `Folder: ${clean}`);
+        }
+    },
+    {
+        id: "workspace_rename_file",
+        category: "Workspace",
+        catClass: "cat-workspace",
+        title: "Rename Current File...",
+        shortcut: "",
+        action: () => {
+            if (!activeFilePath) return;
+            const newPath = prompt("Enter new path / filename:", activeFilePath);
+            if (newPath && newPath.trim() && newPath.trim() !== activeFilePath) {
+                vfsRenameFile(activeFilePath, newPath.trim());
+            }
+        }
+    },
+    {
+        id: "workspace_delete_file",
+        category: "Workspace",
+        catClass: "cat-workspace",
+        title: "Delete Current File",
+        shortcut: "",
+        action: () => {
+            if (!activeFilePath) return;
+            if (confirm(`Delete file "${activeFilePath}"?`)) {
+                vfsDeleteFile(activeFilePath);
+            }
+        }
+    },
+    {
+        id: "workspace_toggle_sidebar",
+        category: "Workspace",
+        catClass: "cat-workspace",
+        title: "Toggle File Explorer Sidebar",
+        shortcut: "",
+        action: () => toggleSidebar()
+    }
+];
+
+// Helper to get wasm bytes from active file or compiled shader
+async function getActiveWasmBytes() {
+    const activeFile = activeFilePath ? vfs.get(activeFilePath) : null;
+    if (!activeFile) {
+        alert("No active file in workspace.");
+        return null;
+    }
+
+    if (activeFile.type === "wasm") {
+        return activeFile.content;
+    }
+
+    const wasmName = activeFile.name.replace(/\.c$/, ".wasm");
+    if (compiledShaders[wasmName]) {
+        return compiledShaders[wasmName];
+    }
+
+    // Try compiling if it's a C shader
+    if (activeFile.type === "c") {
+        try {
+            log(`Compiling ${activeFile.name} to obtain WASM binary...`, "info");
+            const res = await compileShader(activeFile.name, activeFile.content);
+            const importedBytes = new Uint8Array(makeWasmImportMemory(res.wasmBytes));
+            compiledShaders[res.outFileName] = importedBytes;
+            vfsSetFile(res.outFileName, importedBytes, true);
+            return importedBytes;
+        } catch (err) {
+            log(`❌ Failed to compile ${activeFile.name}: ${err.message}`, "err");
+            return null;
+        }
+    }
+
+    alert(`Cannot obtain WASM binary from file "${activeFile.name}". Open a .c or .wasm file.`);
+    return null;
+}
+
+
+
+// Command Palette UI Logic
+let selectedCommandIndex = 0;
+let filteredCommands = [];
+
+function openCommandPalette() {
+    commandPaletteModal.style.display = "flex";
+    commandPaletteInput.value = "";
+    filterCommands("");
+    setTimeout(() => commandPaletteInput.focus(), 50);
+}
+
+function closeCommandPalette() {
+    commandPaletteModal.style.display = "none";
+}
+
+function filterCommands(query) {
+    const q = query.toLowerCase().trim();
+    if (!q) {
+        filteredCommands = [...COMMAND_REGISTRY];
+    } else {
+        filteredCommands = COMMAND_REGISTRY.filter(cmd => 
+            cmd.title.toLowerCase().includes(q) ||
+            cmd.category.toLowerCase().includes(q) ||
+            cmd.shortcut.toLowerCase().includes(q)
+        );
+    }
+    selectedCommandIndex = 0;
+    renderCommandList();
+}
+
+function renderCommandList() {
+    commandPaletteList.innerHTML = "";
+
+    if (filteredCommands.length === 0) {
+        commandPaletteList.innerHTML = `<div style="color:var(--gray); padding:14px; text-align:center; font-size:12px;">No matching commands found.</div>`;
+        return;
+    }
+
+    filteredCommands.forEach((cmd, idx) => {
+        const item = document.createElement("div");
+        item.className = `command-item ${idx === selectedCommandIndex ? "selected" : ""}`;
+        item.innerHTML = `
+            <div class="command-item-main">
+                <span class="command-category ${cmd.catClass}">${cmd.category}</span>
+                <span class="command-title">${cmd.title}</span>
+            </div>
+            ${cmd.shortcut ? `<span class="command-shortcut">${cmd.shortcut}</span>` : ""}
+        `;
+
+        item.addEventListener("click", () => {
+            closeCommandPalette();
+            cmd.action();
+        });
+
+        item.addEventListener("mouseenter", () => {
+            selectedCommandIndex = idx;
+            updateCommandSelection();
+        });
+
+        commandPaletteList.appendChild(item);
+    });
+
+    scrollSelectedIntoView();
+}
+
+function updateCommandSelection() {
+    const items = commandPaletteList.querySelectorAll(".command-item");
+    items.forEach((item, i) => {
+        item.classList.toggle("selected", i === selectedCommandIndex);
+    });
+}
+
+function scrollSelectedIntoView() {
+    const selected = commandPaletteList.querySelector(".command-item.selected");
+    if (selected) {
+        selected.scrollIntoView({ block: "nearest" });
+    }
+}
+
+commandPaletteInput?.addEventListener("input", (e) => {
+    filterCommands(e.target.value);
+});
+
+commandPaletteInput?.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (filteredCommands.length > 0) {
+            selectedCommandIndex = (selectedCommandIndex + 1) % filteredCommands.length;
+            updateCommandSelection();
+            scrollSelectedIntoView();
+        }
+    } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        if (filteredCommands.length > 0) {
+            selectedCommandIndex = (selectedCommandIndex - 1 + filteredCommands.length) % filteredCommands.length;
+            updateCommandSelection();
+            scrollSelectedIntoView();
+        }
+    } else if (e.key === "Enter") {
+        e.preventDefault();
+        if (filteredCommands.length > 0 && filteredCommands[selectedCommandIndex]) {
+            const cmd = filteredCommands[selectedCommandIndex];
+            closeCommandPalette();
+            cmd.action();
+        }
+    } else if (e.key === "Escape") {
+        closeCommandPalette();
+    }
 });
 
 // =============================================================================
-// Tools Suite Integration
+// Modals & Navigation
 // =============================================================================
-function openToolsModal(defaultTab = "pipeline") {
-    toolsModal.style.display = "flex";
-    switchToolTab(defaultTab);
-    updateToolShadersDropdowns();
-}
-
-function switchToolTab(tabName) {
-    toolsTabs.forEach(t => t.classList.toggle("active", t.getAttribute("data-tool") === tabName));
-    toolPanes.forEach(p => p.classList.toggle("active", p.id === `pane-tool-${tabName}`));
-}
-
-toolsBtn?.addEventListener("click", () => openToolsModal("pipeline"));
-closeToolsBtn?.addEventListener("click", () => toolsModal.style.display = "none");
-docsBtn?.addEventListener("click", () => docsModal.style.display = "flex");
 closeDocsBtn?.addEventListener("click", () => docsModal.style.display = "none");
-
-// Presets Modal Listeners
-presetsBtn?.addEventListener("click", () => {
-    presetsModal.style.display = "flex";
-});
-
 closePresetsBtn?.addEventListener("click", () => {
     presetsModal.style.display = "none";
 });
@@ -1042,429 +1732,17 @@ document.querySelectorAll(".preset-card").forEach(card => {
     });
 });
 
-// Close modals on backdrop click
-[toolsModal, docsModal, presetsModal].forEach(modal => {
+[docsModal, presetsModal, commandPaletteModal].forEach(modal => {
     modal?.addEventListener("click", (e) => {
         if (e.target === modal) modal.style.display = "none";
     });
 });
 
-toolsTabs.forEach(tab => {
-    tab.addEventListener("click", () => {
-        switchToolTab(tab.getAttribute("data-tool"));
-    });
-});
-
 window.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
-        if (toolsModal.style.display !== "none") toolsModal.style.display = "none";
         if (docsModal.style.display !== "none") docsModal.style.display = "none";
         if (presetsModal.style.display !== "none") presetsModal.style.display = "none";
-    }
-});
-
-function updateToolShadersDropdowns() {
-    const shaderNames = Object.keys(compiledShaders);
-    const dropdowns = [
-        document.querySelector("#binaryenShaderSelect"),
-        document.querySelector("#wabtShaderSelect"),
-        document.querySelector("#runnerShaderSelect")
-    ];
-
-    dropdowns.forEach(dd => {
-        if (!dd) return;
-        const curVal = dd.value;
-        dd.innerHTML = "";
-        if (shaderNames.length === 0) {
-            const opt = document.createElement("option");
-            opt.value = "";
-            opt.textContent = "-- No compiled shaders yet --";
-            dd.appendChild(opt);
-        } else {
-            shaderNames.forEach(name => {
-                const opt = document.createElement("option");
-                opt.value = name;
-                opt.textContent = `${name} (${compiledShaders[name].byteLength} B)`;
-                dd.appendChild(opt);
-            });
-            if (curVal && shaderNames.includes(curVal)) dd.value = curVal;
-        }
-    });
-}
-
-// 1. Tool: Integrated Pipeline
-const pipePresetSelect = document.querySelector("#pipePresetSelect");
-const pipeJsInput = document.querySelector("#pipeJsInput");
-const pipeOutput = document.querySelector("#pipeOutput");
-const pipeMetricsBadge = document.querySelector("#pipeMetricsBadge");
-const btnRunFullPipeline = document.querySelector("#btnRunFullPipeline");
-const btnPipelineStepPorffor = document.querySelector("#btnPipelineStepPorffor");
-const btnPipeInsertToVfs = document.querySelector("#btnPipeInsertToVfs");
-const btnPipeToRunner = document.querySelector("#btnPipeToRunner");
-let pipelineLastWasm = null;
-
-if (pipePresetSelect) {
-    pipeJsInput.value = TOOL_PRESETS.pipeline[0].code;
-    pipePresetSelect.addEventListener("change", (e) => {
-        const item = TOOL_PRESETS.pipeline.find(p => p.id === e.target.value);
-        if (item) pipeJsInput.value = item.code;
-    });
-
-    btnPipelineStepPorffor.addEventListener("click", async () => {
-        try {
-            log("Pipeline Step 1: Porffor JS -> C...", "info");
-            const res = await compileJsToC(pipeJsInput.value);
-            pipeOutput.value = res.cCode;
-            btnPipeInsertToVfs.disabled = false;
-        } catch (err) {
-            pipeOutput.value = `/* Porffor Error: */ ${err.message}`;
-        }
-    });
-
-    btnRunFullPipeline.addEventListener("click", async () => {
-        try {
-            btnRunFullPipeline.disabled = true;
-            log("🚀 Running Full WebAssembly Pipeline...", "info");
-
-            // Step 1: JS -> C (Porffor)
-            log("1. Transpiling JS to C (Porffor)...", "info");
-            const porfforRes = await compileJsToC(pipeJsInput.value);
-
-            // Step 2: C -> WASM (Compiler Worker)
-            log("2. Compiling C to WASM (Compiler Worker)...", "info");
-            const xccRes = await compileShader("pipeline_generated.c", porfforRes.cCode);
-
-            // Step 3: Binaryen Optimization
-            log("3. Optimizing WASM with Binaryen (-O3)...", "info");
-            const optRes = await optimizeWasm(xccRes.wasmBytes, { level: "O3" });
-
-            // Step 4: Disassemble to WAT (WABT)
-            log("4. Disassembling WAT with WABT...", "info");
-            const wat = await wasmToWat(optRes.optimizedBytes);
-
-            pipelineLastWasm = optRes.optimizedBytes;
-            pipeOutput.value = `// Pipeline Success!\n// Final WASM Size: ${optRes.optimizedSize} bytes (${optRes.ratio})\n\n` + wat;
-            pipeMetricsBadge.style.display = "inline-block";
-            pipeMetricsBadge.textContent = `${optRes.optimizedSize} bytes (${optRes.ratio})`;
-            btnPipeInsertToVfs.disabled = false;
-            btnPipeToRunner.disabled = false;
-
-            log(`✔ Full Pipeline Completed: ${optRes.ratio}`, "ok");
-        } catch (err) {
-            pipeOutput.value = `/* Pipeline Error: */\n${err.message}`;
-            log(`Pipeline Error: ${err.message}`, "err");
-        } finally {
-            btnRunFullPipeline.disabled = false;
-        }
-    });
-
-    btnPipeInsertToVfs.addEventListener("click", () => {
-        const name = `pipeline_gen_${Date.now().toString(36).substring(4)}.c`;
-        vfsSetFile(name, pipeOutput.value.startsWith("// Pipeline Success") ? pipeJsInput.value : pipeOutput.value);
-        openFileInEditor(name);
-        toolsModal.style.display = "none";
-        log(`Saved pipeline output to workspace as ${name}`, "ok");
-    });
-
-    btnPipeToRunner.addEventListener("click", () => {
-        if (!pipelineLastWasm) return;
-        switchToolTab("runner");
-        loadWasmIntoRunnerView(pipelineLastWasm, "pipeline_generated.wasm");
-    });
-}
-
-// 2. Tool: Porffor
-const porfforPresetSelect = document.querySelector("#porfforPresetSelect");
-const porfforSourceInput = document.querySelector("#porfforSourceInput");
-const porfforCOutput = document.querySelector("#porfforCOutput");
-const btnPorfforCompile = document.querySelector("#btnPorfforCompile");
-const btnPorfforCreateShader = document.querySelector("#btnPorfforCreateShader");
-
-if (porfforSourceInput) {
-    porfforSourceInput.value = TOOL_PRESETS.porffor[0].code;
-    porfforPresetSelect.addEventListener("change", (e) => {
-        const item = TOOL_PRESETS.porffor.find(p => p.id === e.target.value);
-        if (item) porfforSourceInput.value = item.code;
-    });
-
-    btnPorfforCompile.addEventListener("click", async () => {
-        try {
-            btnPorfforCompile.disabled = true;
-            log("Transpiling JS to C with Porffor...", "info");
-            const res = await compileJsToC(porfforSourceInput.value);
-            porfforCOutput.value = res.cCode;
-            btnPorfforCreateShader.disabled = false;
-            log("Porffor C code generated.", "ok");
-        } catch (err) {
-            porfforCOutput.value = `/* Porffor Error: */\n${err.message}`;
-            log(`Porffor Error: ${err.message}`, "err");
-        } finally {
-            btnPorfforCompile.disabled = false;
-        }
-    });
-
-    btnPorfforCreateShader.addEventListener("click", () => {
-        const name = `porffor_shader_${Date.now().toString(36).substring(4)}.c`;
-        vfsSetFile(name, porfforCOutput.value);
-        openFileInEditor(name);
-        toolsModal.style.display = "none";
-        log(`✔ Created ${name} in workspace.`, "ok");
-    });
-}
-
-// 3. Tool: Binaryen
-const binaryenShaderSelect = document.querySelector("#binaryenShaderSelect");
-const binaryenLevelSelect = document.querySelector("#binaryenLevelSelect");
-const btnBinaryenRunOpt = document.querySelector("#btnBinaryenRunOpt");
-const btnBinaryenApply = document.querySelector("#btnBinaryenApply");
-const btnBinaryenDownload = document.querySelector("#btnBinaryenDownload");
-const binaryenMetricBadge = document.querySelector("#binaryenMetricBadge");
-const binaryenOriginalWat = document.querySelector("#binaryenOriginalWat");
-const binaryenOptWat = document.querySelector("#binaryenOptWat");
-let lastOptimizedBytes = null;
-
-if (btnBinaryenRunOpt) {
-    binaryenShaderSelect.addEventListener("change", async () => {
-        const name = binaryenShaderSelect.value;
-        if (name && compiledShaders[name]) {
-            try {
-                binaryenOriginalWat.value = await wasmToWat(compiledShaders[name]);
-            } catch (err) {
-                binaryenOriginalWat.value = `/* Disassembly error: ${err.message} */`;
-            }
-        }
-    });
-
-    btnBinaryenRunOpt.addEventListener("click", async () => {
-        const name = binaryenShaderSelect.value;
-        if (!name || !compiledShaders[name]) {
-            alert("Please select a compiled shader first.");
-            return;
-        }
-
-        try {
-            btnBinaryenRunOpt.disabled = true;
-            const originalBytes = compiledShaders[name];
-            const level = binaryenLevelSelect.value;
-            log(`Running wasm-opt (-${level}) on ${name}...`, "info");
-
-            const res = await optimizeWasm(originalBytes, { level });
-            lastOptimizedBytes = res.optimizedBytes;
-
-            binaryenOptWat.value = res.textWat;
-            binaryenMetricBadge.style.display = "inline-block";
-            binaryenMetricBadge.textContent = res.ratio;
-            btnBinaryenApply.disabled = false;
-            btnBinaryenDownload.disabled = false;
-
-            log(`✔ Binaryen optimization done: ${res.ratio}`, "ok");
-        } catch (err) {
-            binaryenOptWat.value = `/* Binaryen error: ${err.message} */`;
-            log(`Binaryen Error: ${err.message}`, "err");
-        } finally {
-            btnBinaryenRunOpt.disabled = false;
-        }
-    });
-
-    btnBinaryenApply.addEventListener("click", () => {
-        const name = binaryenShaderSelect.value;
-        if (name && lastOptimizedBytes) {
-            compiledShaders[name] = lastOptimizedBytes;
-            vfs.set(name, {
-                path: name,
-                name,
-                type: "wasm",
-                content: lastOptimizedBytes,
-                isBinary: true,
-                model: null
-            });
-            renderVfsTree();
-            log(`✔ Applied optimized binary to ${name}`, "ok");
-            alert(`Optimized binary applied to ${name}! Run the project to test.`);
-        }
-    });
-
-    btnBinaryenDownload.addEventListener("click", () => {
-        if (!lastOptimizedBytes) return;
-        const blob = new Blob([lastOptimizedBytes], { type: "application/wasm" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = binaryenShaderSelect.value || "optimized.wasm";
-        a.click();
-        URL.revokeObjectURL(url);
-    });
-}
-
-// 4. Tool: WABT
-const wabtShaderSelect = document.querySelector("#wabtShaderSelect");
-const wabtWatInput = document.querySelector("#wabtWatInput");
-const wabtDecompileOutput = document.querySelector("#wabtDecompileOutput");
-const btnWabtWasm2Wat = document.querySelector("#btnWabtWasm2Wat");
-const btnWabtDecompile = document.querySelector("#btnWabtDecompile");
-const btnWabtWat2Wasm = document.querySelector("#btnWabtWat2Wasm");
-const btnWabtSaveToVfs = document.querySelector("#btnWabtSaveToVfs");
-
-if (btnWabtWasm2Wat) {
-    wabtWatInput.value = TOOL_PRESETS.wabt[0].code;
-
-    btnWabtWasm2Wat.addEventListener("click", async () => {
-        const name = wabtShaderSelect.value;
-        if (!name || !compiledShaders[name]) {
-            alert("Select a compiled shader first.");
-            return;
-        }
-        try {
-            const wat = await wasmToWat(compiledShaders[name]);
-            wabtWatInput.value = wat;
-            log(`wasm2wat disassembly generated for ${name}`, "ok");
-        } catch (err) {
-            wabtWatInput.value = `/* Error: ${err.message} */`;
-        }
-    });
-
-    btnWabtDecompile.addEventListener("click", async () => {
-        const name = wabtShaderSelect.value;
-        if (!name || !compiledShaders[name]) {
-            alert("Select a compiled shader first.");
-            return;
-        }
-        try {
-            const decomp = await wasmDecompile(compiledShaders[name]);
-            wabtDecompileOutput.value = decomp;
-            log(`wasm-decompile generated for ${name}`, "ok");
-        } catch (err) {
-            wabtDecompileOutput.value = `/* Decompile error: ${err.message} */`;
-        }
-    });
-
-    btnWabtWat2Wasm.addEventListener("click", async () => {
-        try {
-            log("Compiling WAT to WASM (wat2wasm)...", "info");
-            const wasmBytes = await watToWasm(wabtWatInput.value);
-            const hex = Array.from(wasmBytes).map(b => b.toString(16).padStart(2, "0")).join(" ");
-            wabtDecompileOutput.value = `// wat2wasm compiled successfully (${wasmBytes.byteLength} bytes):\n${hex}`;
-            log(`wat2wasm generated ${wasmBytes.byteLength} bytes.`, "ok");
-        } catch (err) {
-            wabtDecompileOutput.value = `/* wat2wasm error: ${err.message} */`;
-        }
-    });
-
-    btnWabtSaveToVfs.addEventListener("click", () => {
-        const name = `module_${Date.now().toString(36).substring(4)}.wat`;
-        vfsSetFile(name, wabtWatInput.value);
-        openFileInEditor(name);
-        toolsModal.style.display = "none";
-        log(`Saved WAT module to workspace: ${name}`, "ok");
-    });
-}
-
-// 5. Tool: Runner & Inspector
-const runnerShaderSelect = document.querySelector("#runnerShaderSelect");
-const btnRunnerLoadShader = document.querySelector("#btnRunnerLoadShader");
-const runnerExportsList = document.querySelector("#runnerExportsList");
-const runnerConsoleOutput = document.querySelector("#runnerConsoleOutput");
-const btnClearRunnerLogs = document.querySelector("#btnClearRunnerLogs");
-
-btnClearRunnerLogs?.addEventListener("click", () => {
-    runnerConsoleOutput.value = "";
-});
-
-async function loadWasmIntoRunnerView(wasmBytes, shaderName = "module.wasm") {
-    runnerExportsList.innerHTML = "";
-    runnerConsoleOutput.value = `[Inspector] Loading ${shaderName} (${wasmBytes.byteLength} bytes)...\n`;
-
-    try {
-        const info = await inspectWasm(wasmBytes);
-        const { exports } = await instantiateWasm(wasmBytes, {}, (logMsg) => {
-            runnerConsoleOutput.value += logMsg + "\n";
-            runnerConsoleOutput.scrollTop = runnerConsoleOutput.scrollHeight;
-        });
-
-        const fnExports = info.exports.filter(e => e.kind === "function");
-
-        if (fnExports.length === 0) {
-            runnerExportsList.innerHTML = `<div style="color:var(--gray); padding:10px;">No exported functions found.</div>`;
-            return;
-        }
-
-        fnExports.forEach(exp => {
-            const card = document.createElement("div");
-            card.className = "export-item";
-            card.innerHTML = `
-                <div>
-                  <strong>${exp.name}()</strong>
-                  <div style="font-size:10px; color:var(--gray);">exported function</div>
-                </div>
-                <button class="btn btn-sm btn-primary">Run</button>
-            `;
-
-            card.querySelector("button").addEventListener("click", () => {
-                try {
-                    runnerConsoleOutput.value += `\n>> Invoking '${exp.name}()'...\n`;
-                    const fn = exports[exp.name];
-                    const ret = fn();
-                    runnerConsoleOutput.value += `<< Return value: ${ret}\n`;
-                    runnerConsoleOutput.scrollTop = runnerConsoleOutput.scrollHeight;
-                } catch (err) {
-                    runnerConsoleOutput.value += `<< Execution error: ${err.message}\n`;
-                }
-            });
-
-            runnerExportsList.appendChild(card);
-        });
-
-        runnerConsoleOutput.value += `[Inspector] Ready! ${fnExports.length} function(s) available for execution.\n`;
-    } catch (err) {
-        runnerExportsList.innerHTML = `<div style="color:var(--red-bright); padding:10px;">Error: ${err.message}</div>`;
-        runnerConsoleOutput.value += `[Error] ${err.message}\n`;
-    }
-}
-
-btnRunnerLoadShader?.addEventListener("click", () => {
-    const name = runnerShaderSelect.value;
-    if (name && compiledShaders[name]) {
-        loadWasmIntoRunnerView(compiledShaders[name], name);
-    } else {
-        alert("Please compile a shader first or select one from the dropdown.");
-    }
-});
-
-// Quick Editor Bar Buttons
-btnQuickInspect?.addEventListener("click", () => {
-    openToolsModal("runner");
-    const activeFile = activeFilePath ? vfs.get(activeFilePath) : null;
-    if (activeFile && activeFile.type === "c") {
-        const wasmName = activeFile.name.replace(/\.c$/, ".wasm");
-        if (compiledShaders[wasmName]) {
-            runnerShaderSelect.value = wasmName;
-            loadWasmIntoRunnerView(compiledShaders[wasmName], wasmName);
-        }
-    }
-});
-
-btnQuickWat?.addEventListener("click", async () => {
-    openToolsModal("wabt");
-    const activeFile = activeFilePath ? vfs.get(activeFilePath) : null;
-    if (activeFile && activeFile.type === "c") {
-        const wasmName = activeFile.name.replace(/\.c$/, ".wasm");
-        if (compiledShaders[wasmName]) {
-            wabtShaderSelect.value = wasmName;
-            const wat = await wasmToWat(compiledShaders[wasmName]);
-            wabtWatInput.value = wat;
-        }
-    }
-});
-
-btnQuickOpt?.addEventListener("click", async () => {
-    openToolsModal("binaryen");
-    const activeFile = activeFilePath ? vfs.get(activeFilePath) : null;
-    if (activeFile && activeFile.type === "c") {
-        const wasmName = activeFile.name.replace(/\.c$/, ".wasm");
-        if (compiledShaders[wasmName]) {
-            binaryenShaderSelect.value = wasmName;
-            binaryenOriginalWat.value = await wasmToWat(compiledShaders[wasmName]);
-        }
+        if (commandPaletteModal.style.display !== "none") commandPaletteModal.style.display = "none";
     }
 });
 

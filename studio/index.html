@@ -10,88 +10,56 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
 </head>
 <body>
-  <header>
-    <div class="brand">
-      <span class="logo-badge">LAUNDRY</span>
-      <span class="brand-subtitle">Studio</span>
-    </div>
+  <input type="file" id="zipFileInput" accept=".zip" style="display:none;">
 
-    <div class="toolbar">
-      <button id="toggleSidebarBtn" class="btn" title="Toggle Virtual File Explorer">📁 FILES</button>
-      <button id="presetsBtn" class="btn" title="Browse Example Projects">📚 PRESETS</button>
-      <button id="compileBtn" class="btn btn-primary">▶ RUN (Ctrl+Enter)</button>
-      <button id="toolsBtn" class="btn btn-tools">🛠️ TOOLS</button>
-
-      <input type="file" id="zipFileInput" accept=".zip" style="display:none;">
-      <button id="uploadZipBtn" class="btn">📂 LOAD ZIP</button>
-      <button id="downloadBtn" class="btn btn-orange">📦 EXPORT ZIP</button>
-      <button id="docsBtn" class="btn btn-docs">📖 DOCS</button>
-    </div>
-  </header>
-
+  <!-- Main Full-Screen Layout -->
   <div class="main-layout">
-    <!-- Left Sidebar: Virtual File Explorer -->
-    <aside id="fileExplorer" class="file-explorer-pane">
-      <div class="explorer-header">
-        <span>📁 WORKSPACE</span>
-        <div class="explorer-actions">
-          <button id="vfsNewFileBtn" class="icon-btn" title="New File">+📄</button>
-          <button id="vfsNewFolderBtn" class="icon-btn" title="New Folder">+📁</button>
-          <button id="vfsExportZipBtn" class="icon-btn" title="Export Workspace as ZIP">📦</button>
-        </div>
-      </div>
-
-      <div id="vfsTreeContainer" class="vfs-tree-container">
-        <!-- Tree rendered dynamically by JS -->
-      </div>
-
-      <div class="explorer-drop-zone" id="vfsDropZone">
-        <span>Drop .zip or files here</span>
-      </div>
-    </aside>
-
-    <!-- Center: Multi-Tab Monaco Code Editor -->
-    <div class="editor-pane">
+    <!-- Editor Pane (Full Workspace) -->
+    <div class="workspace-pane">
       <div class="tab-bar">
         <div id="tabList" class="tab-list"></div>
-        <button id="addTabBtn" class="tab-add-btn" title="Add another C shader tab">+ ADD SHADER</button>
-
-        <div class="editor-quick-tools">
-          <button id="btnQuickInspect" class="btn btn-sm" title="Inspect current compiled shader in WASM Runner">🔍 Inspect</button>
-          <button id="btnQuickWat" class="btn btn-sm" title="View WAT disassembly of current shader">📄 WAT</button>
-          <button id="btnQuickOpt" class="btn btn-sm" title="Optimize current shader with Binaryen wasm-opt">✨ wasm-opt</button>
-        </div>
       </div>
 
-      <div class="editor-container">
+      <!-- Monaco Code Editor Host -->
+      <div class="content-container">
         <div id="monacoEditorContainer" class="monaco-host"></div>
       </div>
-    </div>
 
-    <!-- Right: Viewport Canvas & Build Console -->
-    <div class="preview-pane">
-      <div class="viewport-header">
-        <span>VIEWPORT (600x400)</span>
-        <div style="display:flex; gap:12px; align-items:center;">
-          <div><span id="fpsStat" style="color:var(--green-bright); font-weight:bold;">0.0</span> FPS</div>
-          <button id="playPauseBtn" class="btn" style="padding:2px 8px; font-size:11px;">PAUSE</button>
-        </div>
-      </div>
-
-      <div class="viewport-container">
-        <canvas id="viewport" width="600" height="400"></canvas>
-      </div>
-
-      <div class="console-pane">
-        <div class="console-header">
-          <span>CONSOLE OUTPUT</span>
-          <div style="display:flex; gap:6px;">
-            <button id="copyLogsBtn" class="btn" style="padding:2px 6px; font-size:10px;">📋 COPY</button>
-            <button id="clearLogsBtn" class="btn" style="padding:2px 6px; font-size:10px;">CLEAR</button>
+      <!-- Bottom Console Drawer (VS Code Style) -->
+      <div id="consoleDrawer" class="console-drawer collapsed">
+        <div class="console-drawer-header">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <span class="console-title">OUTPUT CONSOLE</span>
+            <span id="consoleBadge" class="console-badge">READY</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:6px;">
+            <button id="copyLogsBtn" class="btn btn-xs">COPY</button>
+            <button id="clearLogsBtn" class="btn btn-xs">CLEAR</button>
+            <button id="toggleConsoleDrawerBtn" class="btn btn-xs" title="Close Console Panel">✕</button>
           </div>
         </div>
-        <div id="consoleOutput" class="console-output"></div>
+        <div id="consoleOutput" class="console-drawer-output"></div>
       </div>
+    </div>
+  </div>
+
+  <!-- Floating Picture-in-Picture Viewport Window -->
+  <div id="floatingViewport" class="floating-window">
+    <div id="floatingHeader" class="floating-header">
+      <div class="floating-title-group">
+        <span class="floating-drag-handle">⠿</span>
+        <span class="floating-title">VIEWPORT</span>
+        <span id="floatingFps" class="floating-fps">60 FPS</span>
+      </div>
+      <div class="floating-controls">
+        <button id="playPauseBtn" class="btn-window-ctrl" title="Play / Pause">PAUSE</button>
+        <button id="floatingMinimizeBtn" class="btn-window-ctrl" title="Minimize Viewport">−</button>
+        <button id="floatingResizeBtn" class="btn-window-ctrl" title="Expand / Normal Size">⤢</button>
+      </div>
+    </div>
+    
+    <div id="floatingBody" class="floating-body">
+      <canvas id="viewport" width="600" height="400"></canvas>
     </div>
   </div>
 
@@ -100,188 +68,28 @@
     <div style="display:flex; align-items:center; gap:14px;">
       <span id="statusMsg">READY</span>
       <span id="workspaceStats" style="color:var(--fg4); font-size:11px;">3 files</span>
+      <button id="statusBarConsoleBtn" class="status-btn" title="Toggle Console Logs Drawer">Console</button>
+      <button id="statusBarViewportBtn" class="status-btn" title="Toggle Floating Viewport">Viewport</button>
     </div>
     <div style="display:flex; align-items:center; gap:14px;">
+      <button id="statusBarActionsBtn" class="status-btn status-btn-highlight" title="Open Actions Palette (Ctrl+Shift+P)">ACTIONS</button>
       <span id="editorLanguage" style="color:var(--fg4); font-size:11px;">C</span>
       <span id="cursorPos" style="color:var(--fg2); font-size:11px;">Ln 1, Col 1</span>
-      <span>GRUVBOX • MONACO & IN-BROWSER C COMPILER</span>
     </div>
   </div>
 
-  <!-- Tools Modal -->
-  <div id="toolsModal" class="modal-backdrop" style="display: none;">
-    <div class="modal-window tools-modal-window">
-      <div class="modal-header">
-        <div style="display:flex; align-items:center; gap:8px;">
-          <span class="logo-badge">TOOLKIT</span>
-          <span>COMPILER PIPELINE & WASM SUITE</span>
-        </div>
-        <button id="closeToolsBtn" class="btn" style="padding:2px 8px; font-size:12px;">✕ CLOSE (Esc)</button>
+  <!-- Command Palette Modal (Ctrl+Shift+P / F1) -->
+  <div id="commandPaletteModal" class="modal-backdrop command-palette-backdrop" style="display: none;">
+    <div class="command-palette-window">
+      <div class="command-palette-input-wrap">
+        <span class="command-palette-prefix">></span>
+        <input type="text" id="commandPaletteInput" class="command-palette-input" placeholder="Type an action (e.g. run, presets, files, wasm-opt, wat, zip)..." autocomplete="off" spellcheck="false">
       </div>
-
-      <!-- Tools Tab Bar -->
-      <div class="tools-tab-bar">
-        <button class="tools-tab active" data-tool="pipeline">🚀 Integrated Pipeline</button>
-        <button class="tools-tab" data-tool="porffor">⚡ Porffor (JS ➔ C)</button>
-        <button class="tools-tab" data-tool="binaryen">✨ Binaryen (wasm-opt)</button>
-        <button class="tools-tab" data-tool="wabt">📄 WABT (WAT / Decompile)</button>
-        <button class="tools-tab" data-tool="runner">🔍 Runner & Inspector</button>
+      <div id="commandPaletteList" class="command-palette-list">
+        <!-- Rendered dynamically by JS -->
       </div>
-
-      <div class="modal-body tools-modal-body">
-        <!-- 1. Integrated Pipeline Pane -->
-        <div id="pane-tool-pipeline" class="tool-pane active">
-          <div class="tool-toolbar">
-            <div class="pipeline-flow-steps">
-              <span class="pipe-step">1. JS (Porffor)</span> ➔
-              <span class="pipe-step">2. C (Compiler)</span> ➔
-              <span class="pipe-step">3. Binaryen (-O3)</span> ➔
-              <span class="pipe-step">4. WABT / Runner</span>
-            </div>
-            <div style="display:flex; gap:8px; align-items:center;">
-              <select id="pipePresetSelect" class="dropdown">
-                <option value="fib_js">Preset: Fibonacci (JS)</option>
-                <option value="math_js">Preset: Mandelbrot Math (JS)</option>
-              </select>
-              <button id="btnRunFullPipeline" class="btn btn-primary">▶ Run Full Pipeline</button>
-            </div>
-          </div>
-
-          <div class="tool-grid-2">
-            <div class="tool-col">
-              <div class="tool-sub-header">
-                <span>Input JavaScript</span>
-                <button id="btnPipelineStepPorffor" class="btn btn-sm">Transpile to C ➔</button>
-              </div>
-              <textarea id="pipeJsInput" class="tool-textarea" spellcheck="false"></textarea>
-            </div>
-            <div class="tool-col">
-              <div class="tool-sub-header">
-                <span>Output / Final Optimized WAT</span>
-                <div style="display:flex; gap:6px;">
-                  <span id="pipeMetricsBadge" class="badge-metric" style="display:none;">0 bytes</span>
-                  <button id="btnPipeInsertToVfs" class="btn btn-sm btn-orange" disabled>+ Save to Workspace</button>
-                  <button id="btnPipeToRunner" class="btn btn-sm btn-primary" disabled>▶ Runner</button>
-                </div>
-              </div>
-              <textarea id="pipeOutput" class="tool-textarea tool-readonly" readonly spellcheck="false"></textarea>
-            </div>
-          </div>
-        </div>
-
-        <!-- 2. Porffor Pane -->
-        <div id="pane-tool-porffor" class="tool-pane">
-          <div class="tool-toolbar">
-            <span>Transpile JavaScript algorithms directly into pure C with <a href="https://github.com/CanadaHonk/porffor" target="_blank" style="color:var(--yellow-bright)">Porffor</a>.</span>
-            <div style="display:flex; gap:8px;">
-              <select id="porfforPresetSelect" class="dropdown">
-                <option value="basic_js">Hello & Arithmetic</option>
-                <option value="bitwise_js">Bitwise Popcount</option>
-              </select>
-              <button id="btnPorfforCompile" class="btn btn-primary">⚡ Generate C</button>
-            </div>
-          </div>
-
-          <div class="tool-grid-2">
-            <div class="tool-col">
-              <div class="tool-sub-header">JavaScript Source</div>
-              <textarea id="porfforSourceInput" class="tool-textarea" spellcheck="false"></textarea>
-            </div>
-            <div class="tool-col">
-              <div class="tool-sub-header">
-                <span>Generated C Code</span>
-                <button id="btnPorfforCreateShader" class="btn btn-sm btn-orange" disabled>+ Create Shader (.c)</button>
-              </div>
-              <textarea id="porfforCOutput" class="tool-textarea tool-readonly" readonly spellcheck="false"></textarea>
-            </div>
-          </div>
-        </div>
-
-        <!-- 3. Binaryen Pane -->
-        <div id="pane-tool-binaryen" class="tool-pane">
-          <div class="tool-toolbar">
-            <div style="display:flex; gap:8px; align-items:center;">
-              <label>Target Shader:</label>
-              <select id="binaryenShaderSelect" class="dropdown"></select>
-              <select id="binaryenLevelSelect" class="dropdown">
-                <option value="O3">-O3 (Aggressive Optimization)</option>
-                <option value="O2">-O2 (Standard)</option>
-                <option value="O1">-O1 (Light)</option>
-                <option value="Oz">-Oz (Size Aggressive)</option>
-                <option value="Os">-Os (Size)</option>
-              </select>
-              <button id="btnBinaryenRunOpt" class="btn btn-primary">✨ wasm-opt</button>
-            </div>
-            <div style="display:flex; gap:8px;">
-              <span id="binaryenMetricBadge" class="badge-metric" style="display:none;">0% reduction</span>
-              <button id="btnBinaryenApply" class="btn btn-sm btn-orange" disabled>✔ Apply to Workspace</button>
-              <button id="btnBinaryenDownload" class="btn btn-sm" disabled>💾 Save .wasm</button>
-            </div>
-          </div>
-
-          <div class="tool-grid-2">
-            <div class="tool-col">
-              <div class="tool-sub-header">Original WASM (WAT Disassembly)</div>
-              <textarea id="binaryenOriginalWat" class="tool-textarea tool-readonly" readonly spellcheck="false" placeholder="Compile a shader in Laundry or select one from the dropdown..."></textarea>
-            </div>
-            <div class="tool-col">
-              <div class="tool-sub-header">Optimized WASM (WAT)</div>
-              <textarea id="binaryenOptWat" class="tool-textarea tool-readonly" readonly spellcheck="false"></textarea>
-            </div>
-          </div>
-        </div>
-
-        <!-- 4. WABT Pane -->
-        <div id="pane-tool-wabt" class="tool-pane">
-          <div class="tool-toolbar">
-            <div style="display:flex; gap:8px; align-items:center;">
-              <label>Target Shader:</label>
-              <select id="wabtShaderSelect" class="dropdown"></select>
-              <button id="btnWabtWasm2Wat" class="btn">wasm2wat (Disassemble)</button>
-              <button id="btnWabtDecompile" class="btn">wasm-decompile (C-like)</button>
-              <button id="btnWabtWat2Wasm" class="btn btn-primary">wat2wasm (Compile)</button>
-            </div>
-            <div style="display:flex; gap:8px;">
-              <button id="btnWabtSaveToVfs" class="btn btn-sm btn-orange">+ Save to Workspace</button>
-            </div>
-          </div>
-
-          <div class="tool-grid-2">
-            <div class="tool-col">
-              <div class="tool-sub-header">WAT Editor (WebAssembly Text)</div>
-              <textarea id="wabtWatInput" class="tool-textarea" spellcheck="false"></textarea>
-            </div>
-            <div class="tool-col">
-              <div class="tool-sub-header">Decompiled Output / WASM Binary</div>
-              <textarea id="wabtDecompileOutput" class="tool-textarea tool-readonly" readonly spellcheck="false"></textarea>
-            </div>
-          </div>
-        </div>
-
-        <!-- 5. Runner & Inspector Pane -->
-        <div id="pane-tool-runner" class="tool-pane">
-          <div class="tool-toolbar">
-            <div style="display:flex; gap:8px; align-items:center;">
-              <label>Shader to Inspect:</label>
-              <select id="runnerShaderSelect" class="dropdown"></select>
-              <button id="btnRunnerLoadShader" class="btn btn-primary">🔍 Inspect & Instantiate</button>
-            </div>
-            <button id="btnClearRunnerLogs" class="btn btn-sm">Clear Logs</button>
-          </div>
-
-          <div class="tool-grid-2">
-            <div class="tool-col" style="flex: 0 0 320px;">
-              <div class="tool-sub-header">Exported Functions & Memory</div>
-              <div id="runnerExportsList" class="runner-exports-list">
-                <div style="color:var(--gray); padding:12px; font-size:12px;">Select a compiled shader to inspect.</div>
-              </div>
-            </div>
-            <div class="tool-col">
-              <div class="tool-sub-header">WASM Execution Console / WASI Emulation</div>
-              <textarea id="runnerConsoleOutput" class="tool-textarea tool-readonly" readonly spellcheck="false"></textarea>
-            </div>
-          </div>
-        </div>
+      <div class="command-palette-footer">
+        <span>Use <b>↑</b> <b>↓</b> to navigate, <b>Enter</b> to run action, <b>Esc</b> to close</span>
       </div>
     </div>
   </div>
@@ -369,7 +177,7 @@
     <div class="modal-window">
       <div class="modal-header">
         <div style="display:flex; align-items:center; gap:8px;">
-          <span>📖 WASH QUICK REFERENCE & API DOCS</span>
+          <span>WASH QUICK REFERENCE & API DOCS</span>
         </div>
         <button id="closeDocsBtn" class="btn" style="padding:2px 8px; font-size:12px;">✕ CLOSE (Esc)</button>
       </div>
@@ -432,6 +240,10 @@ uint32_t _start(uint8_t* pixels, uint32_t width, uint32_t height, float time) {
             </tr>
           </thead>
           <tbody>
+            <tr>
+              <td><code>Ctrl + Shift + P</code> / <code>Cmd + Shift + P</code></td>
+              <td>Open Command Palette / Actions.</td>
+            </tr>
             <tr>
               <td><code>Ctrl + Enter</code> / <code>Cmd + Enter</code></td>
               <td>Compile all C shaders in-browser and run pipeline.</td>
