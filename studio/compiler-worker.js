@@ -93,9 +93,7 @@ self.onmessage = async (e) => {
             "-nostdlib",
             "-nodefaultlibs",
             "-I/sysroot/include",
-            "--import-memory",
-            "--entry-point=",
-            "-e" + (entryPoint || "_start"),
+            "-e_start",
             "/" + srcFileName
         ];
 

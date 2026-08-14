@@ -1,4 +1,4 @@
-/* Gruvbox Dark - Wash Studio */
+/* Gruvbox Dark - Wash Studio (Laundry) */
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
 :root {
@@ -39,7 +39,7 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
-  border-radius: 0 !important; /* Square sharp retro aesthetic */
+  border-radius: 0 !important;
 }
 
 body {
@@ -53,6 +53,23 @@ body {
   flex-direction: column;
   overflow: hidden;
   user-select: none;
+}
+
+::selection {
+  background: #504945;
+  color: #fbf1c7;
+}
+
+.console-output, 
+.log-entry, 
+.tool-textarea, 
+.modal-body, 
+.code-editor, 
+.vfs-tree-container,
+pre, 
+code {
+  user-select: text !important;
+  -webkit-user-select: text !important;
 }
 
 /* Header / Nav */
@@ -85,6 +102,12 @@ header {
   padding: 2px 6px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+}
+
+.brand-subtitle {
+  font-size: 11px;
+  color: var(--gray);
+  font-weight: 400;
 }
 
 .toolbar {
@@ -124,6 +147,11 @@ header {
   cursor: not-allowed;
 }
 
+.btn-sm {
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
 .btn-primary {
   background: var(--green);
   color: var(--bg0-hard);
@@ -148,6 +176,41 @@ header {
   color: var(--bg0-hard);
 }
 
+.btn-tools {
+  border-color: var(--aqua);
+  color: var(--aqua-bright);
+}
+
+.btn-tools:hover {
+  background: var(--aqua);
+  color: var(--bg0-hard);
+}
+
+.btn-docs {
+  border-color: var(--yellow);
+  color: var(--yellow-bright);
+}
+
+.btn-docs:hover {
+  background: var(--yellow);
+  color: var(--bg0-hard);
+}
+
+.icon-btn {
+  background: transparent;
+  border: none;
+  color: var(--fg4);
+  cursor: pointer;
+  padding: 2px 5px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+}
+
+.icon-btn:hover {
+  color: var(--fg0);
+  background: var(--bg1);
+}
+
 /* Dropdown */
 .dropdown {
   background: var(--bg0-soft);
@@ -166,21 +229,128 @@ header {
 
 /* Main Split View */
 .main-layout {
-  display: grid;
-  grid-template-columns: 1fr 640px;
+  display: flex;
   flex: 1;
   overflow: hidden;
   border-bottom: 2px solid var(--bg1);
 }
 
-/* Left: Multi-Tab Code Editor */
+/* Left Sidebar: Virtual File Explorer */
+.file-explorer-pane {
+  width: 220px;
+  min-width: 180px;
+  max-width: 320px;
+  background: var(--bg0);
+  border-right: 2px solid var(--bg1);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  user-select: none;
+  transition: width 0.15s ease;
+}
+
+.file-explorer-pane.collapsed {
+  width: 0px;
+  min-width: 0px;
+  display: none;
+}
+
+.explorer-header {
+  background: var(--bg0-soft);
+  border-bottom: 1px solid var(--bg1);
+  padding: 6px 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--fg3);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.explorer-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.vfs-tree-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 0;
+  font-size: 12px;
+}
+
+.vfs-node {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  cursor: pointer;
+  color: var(--fg3);
+  border-left: 2px solid transparent;
+}
+
+.vfs-node:hover {
+  background: var(--bg0-soft);
+  color: var(--fg1);
+}
+
+.vfs-node.active {
+  background: var(--bg1);
+  color: var(--yellow-bright);
+  border-left-color: var(--yellow);
+  font-weight: 600;
+}
+
+.vfs-node-content {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vfs-icon {
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.vfs-node-actions {
+  display: none;
+  gap: 2px;
+}
+
+.vfs-node:hover .vfs-node-actions {
+  display: flex;
+}
+
+.explorer-drop-zone {
+  border-top: 1px dashed var(--bg2);
+  padding: 10px;
+  text-align: center;
+  font-size: 10.5px;
+  color: var(--gray);
+  background: var(--bg0-hard);
+}
+
+.explorer-drop-zone.dragover {
+  background: var(--bg1);
+  color: var(--green-bright);
+  border-top-color: var(--green);
+}
+
+/* Center: Multi-Tab Code Editor */
 .editor-pane {
+  flex: 1;
   display: flex;
   flex-direction: column;
   background: var(--bg0-hard);
   border-right: 2px solid var(--bg1);
   overflow: hidden;
   position: relative;
+  min-width: 300px;
 }
 
 .tab-bar {
@@ -255,6 +425,13 @@ header {
   background: var(--bg0-soft);
 }
 
+.editor-quick-tools {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+  padding: 0 10px;
+}
+
 /* Syntax Highlighted Editor Container */
 .editor-container {
   flex: 1;
@@ -313,10 +490,12 @@ header {
 
 /* Right: Preview Viewport & Console */
 .preview-pane {
+  width: 640px;
   display: flex;
   flex-direction: column;
   background: var(--bg0);
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .viewport-header {
@@ -408,19 +587,19 @@ canvas#viewport {
   font-weight: 600;
 }
 
-/* Documentation Modal */
+/* Modals */
 .modal-backdrop {
   position: fixed;
   top: 0;
   left: 0;
   width: 100vw;
   height: 100vh;
-  background: rgba(0, 0, 0, 0.75);
+  background: rgba(0, 0, 0, 0.78);
   display: flex;
   justify-content: center;
   align-items: center;
   z-index: 1000;
-  backdrop-filter: blur(2px);
+  backdrop-filter: blur(3px);
 }
 
 .modal-window {
@@ -432,6 +611,13 @@ canvas#viewport {
   flex-direction: column;
   box-shadow: 12px 12px 0px rgba(0, 0, 0, 0.6);
   user-select: text;
+}
+
+.tools-modal-window {
+  width: min(1060px, 96vw);
+  height: 88vh;
+  max-height: 88vh;
+  border-color: var(--aqua);
 }
 
 .modal-header {
@@ -451,8 +637,171 @@ canvas#viewport {
   font-size: 12.5px;
   line-height: 1.65;
   color: var(--fg1);
+  flex: 1;
 }
 
+.tools-modal-body {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Tools Internal Tabs */
+.tools-tab-bar {
+  background: var(--bg0-soft);
+  border-bottom: 1px solid var(--bg1);
+  display: flex;
+  overflow-x: auto;
+}
+
+.tools-tab {
+  background: transparent;
+  color: var(--fg4);
+  border: none;
+  border-right: 1px solid var(--bg1);
+  padding: 8px 16px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tools-tab:hover {
+  background: var(--bg1);
+  color: var(--fg1);
+}
+
+.tools-tab.active {
+  background: var(--bg0-hard);
+  color: var(--aqua-bright);
+  border-top: 2px solid var(--aqua);
+}
+
+.tool-pane {
+  display: none;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg0-hard);
+}
+
+.tool-pane.active {
+  display: flex;
+}
+
+.tool-toolbar {
+  background: var(--bg0);
+  border-bottom: 1px solid var(--bg1);
+  padding: 8px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.pipeline-flow-steps {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fg3);
+  font-size: 11.5px;
+}
+
+.pipe-step {
+  background: var(--bg1);
+  padding: 2px 6px;
+  color: var(--yellow-bright);
+  font-weight: 600;
+}
+
+.tool-grid-2 {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  overflow: hidden;
+}
+
+.tool-col {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--bg1);
+  overflow: hidden;
+}
+
+.tool-col:last-child {
+  border-right: none;
+}
+
+.tool-sub-header {
+  background: var(--bg0-soft);
+  border-bottom: 1px solid var(--bg1);
+  padding: 6px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--fg3);
+}
+
+.tool-textarea {
+  flex: 1;
+  width: 100%;
+  background: var(--bg0-hard);
+  color: var(--fg1);
+  border: none;
+  outline: none;
+  padding: 12px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  resize: none;
+  tab-size: 4;
+}
+
+.tool-readonly {
+  background: #181a1b;
+  color: var(--aqua-bright);
+}
+
+.badge-metric {
+  background: var(--bg1);
+  color: var(--green-bright);
+  border: 1px solid var(--green);
+  padding: 2px 6px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.runner-exports-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.export-item {
+  background: var(--bg0);
+  border: 1px solid var(--bg1);
+  padding: 8px 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.export-item:hover {
+  border-color: var(--bg2);
+}
+
+/* Modal Typography */
 .modal-body h3 {
   color: var(--yellow-bright);
   font-size: 14px;
@@ -460,15 +809,8 @@ canvas#viewport {
   border-bottom: 1px solid var(--bg2);
   padding-bottom: 4px;
 }
-
-.modal-body h3:first-child {
-  margin-top: 0;
-}
-
-.modal-body p {
-  margin-bottom: 10px;
-}
-
+.modal-body h3:first-child { margin-top: 0; }
+.modal-body p { margin-bottom: 10px; }
 .modal-body code {
   background: var(--bg0-hard);
   color: var(--aqua-bright);
@@ -477,7 +819,6 @@ canvas#viewport {
   font-family: var(--font-mono);
   font-size: 12px;
 }
-
 .modal-body pre {
   background: var(--bg0-hard);
   border: 1px solid var(--bg2);
@@ -488,137 +829,65 @@ canvas#viewport {
   font-size: 12px;
   color: var(--fg2);
 }
-
 .modal-table {
   width: 100%;
   border-collapse: collapse;
   margin: 12px 0;
 }
-
 .modal-table th, .modal-table td {
   border: 1px solid var(--bg2);
   padding: 6px 10px;
   text-align: left;
   font-size: 12px;
 }
-
 .modal-table th {
   background: var(--bg0-soft);
   color: var(--yellow-bright);
   font-weight: 700;
 }
 
-/* ==========================================================================
-   Mobile Responsive Layout (Stacked Components)
-   ========================================================================== */
-@media (max-width: 960px) {
+/* Responsive */
+@media (max-width: 1024px) {
   body {
     height: auto;
     min-height: 100vh;
     overflow-y: auto;
-    overflow-x: hidden;
   }
-
   header {
     flex-direction: column;
     align-items: stretch;
     gap: 10px;
-    padding: 10px 12px;
   }
-
-  .brand {
-    justify-content: space-between;
-  }
-
   .toolbar {
     flex-wrap: wrap;
-    gap: 6px;
   }
-
-  .dropdown {
+  .main-layout {
+    flex-direction: column;
+    height: auto;
+  }
+  .file-explorer-pane {
+    width: 100%;
+    max-width: 100%;
+    height: 180px;
+  }
+  .editor-pane {
+    height: 400px;
+  }
+  .preview-pane {
     width: 100%;
   }
-
-  .btn {
-    flex: 1 1 calc(50% - 6px);
-    justify-content: center;
-    padding: 7px 10px;
-    font-size: 11.5px;
-  }
-
-  .main-layout {
+  .tool-grid-2 {
     grid-template-columns: 1fr;
-    border-bottom: none;
-    overflow: visible;
-    height: auto;
+    grid-template-rows: 1fr 1fr;
   }
-
-  .editor-pane {
-    border-right: none;
-    border-bottom: 2px solid var(--bg1);
-    height: auto;
-    overflow: visible;
-  }
-
-  .editor-container {
-    height: 400px;
-    min-height: 350px;
-  }
-
-  .preview-pane {
-    height: auto;
-    overflow: visible;
-  }
-
-  .viewport-container {
-    padding: 12px;
-  }
-
-  canvas#viewport {
-    max-width: 100%;
-    height: auto !important;
-    aspect-ratio: 600 / 400;
-  }
-
-  .console-pane {
-    height: auto;
-    border-bottom: 2px solid var(--bg1);
-  }
-
-  .console-output {
-    height: 180px;
-    max-height: 220px;
-  }
-
-  .status-bar {
-    flex-direction: column;
-    gap: 4px;
-    text-align: center;
-    padding: 6px 12px;
-  }
-
-  .modal-window {
-    width: 96vw;
-    max-height: 90vh;
-  }
-
-  .modal-body {
-    padding: 14px 16px;
+  .tools-modal-window {
+    width: 98vw;
+    height: 94vh;
   }
 }
 
 /* Scrollbars */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-::-webkit-scrollbar-track {
-  background: var(--bg0-hard);
-}
-::-webkit-scrollbar-thumb {
-  background: var(--bg2);
-  border: 1px solid var(--bg1);
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--bg3);
-}
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: var(--bg0-hard); }
+::-webkit-scrollbar-thumb { background: var(--bg2); border: 1px solid var(--bg1); }
+::-webkit-scrollbar-thumb:hover { background: var(--bg3); }

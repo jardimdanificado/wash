@@ -3,22 +3,27 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Laundry</title>
+  <title>Laundry — WebAssembly Compute Studio</title>
   <link rel="stylesheet" href="studio.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <!-- Prism.js for C & JavaScript Syntax Highlighting -->
+  <!-- Prism.js for C, JavaScript, and WebAssembly Text (WAT) Syntax Highlighting -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-javascript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-wasm.min.js"></script>
 </head>
 <body>
   <header>
     <div class="brand">
+      <span class="logo-badge">WASM</span>
       <span>LAUNDRY</span>
+      <span class="brand-subtitle">Studio</span>
     </div>
 
     <div class="toolbar">
-      <select id="presetSelect" class="dropdown">
+      <button id="toggleSidebarBtn" class="btn" title="Toggle Virtual File Explorer">📁 FILES</button>
+      
+      <select id="presetSelect" class="dropdown" title="Select Example Project Preset">
         <option value="pipeline">01. Shared Memory Pipeline (2 Shaders)</option>
         <option value="pathtracer">02. Monte Carlo Path Tracer (3D)</option>
         <option value="fractal">03. Interactive Julia Fractal</option>
@@ -26,19 +31,47 @@
       </select>
 
       <button id="compileBtn" class="btn btn-primary">▶ RUN (Ctrl+Enter)</button>
+      <button id="toolsBtn" class="btn btn-tools">🛠️ TOOLS</button>
+
       <input type="file" id="zipFileInput" accept=".zip" style="display:none;">
       <button id="uploadZipBtn" class="btn">📂 LOAD ZIP</button>
       <button id="downloadBtn" class="btn btn-orange">📦 EXPORT ZIP</button>
-      <button id="docsBtn" class="btn" style="border-color:var(--yellow); color:var(--yellow-bright);">📖 DOCS</button>
+      <button id="docsBtn" class="btn btn-docs">📖 DOCS</button>
     </div>
   </header>
 
   <div class="main-layout">
-    <!-- Left: Multi-Tab Gruvbox Code Editor -->
+    <!-- Left Sidebar: Virtual File Explorer -->
+    <aside id="fileExplorer" class="file-explorer-pane">
+      <div class="explorer-header">
+        <span>📁 WORKSPACE</span>
+        <div class="explorer-actions">
+          <button id="vfsNewFileBtn" class="icon-btn" title="New File">+📄</button>
+          <button id="vfsNewFolderBtn" class="icon-btn" title="New Folder">+📁</button>
+          <button id="vfsExportZipBtn" class="icon-btn" title="Export Workspace as ZIP">📦</button>
+        </div>
+      </div>
+
+      <div id="vfsTreeContainer" class="vfs-tree-container">
+        <!-- Tree rendered dynamically by JS -->
+      </div>
+
+      <div class="explorer-drop-zone" id="vfsDropZone">
+        <span>Drop .zip or .c / .js files here</span>
+      </div>
+    </aside>
+
+    <!-- Center: Multi-Tab Code Editor -->
     <div class="editor-pane">
       <div class="tab-bar">
         <div id="tabList" class="tab-list"></div>
         <button id="addTabBtn" class="tab-add-btn" title="Add another C shader tab">+ ADD SHADER</button>
+
+        <div class="editor-quick-tools">
+          <button id="btnQuickInspect" class="btn btn-sm" title="Inspect current compiled shader in WASM Runner">🔍 Inspect</button>
+          <button id="btnQuickWat" class="btn btn-sm" title="View WAT disassembly of current shader">📄 WAT</button>
+          <button id="btnQuickOpt" class="btn btn-sm" title="Optimize current shader with Binaryen wasm-opt">✨ wasm-opt</button>
+        </div>
       </div>
 
       <div class="editor-container">
@@ -66,16 +99,201 @@
       <div class="console-pane">
         <div class="console-header">
           <span>CONSOLE OUTPUT</span>
-          <button id="clearLogsBtn" class="btn" style="padding:2px 6px; font-size:10px;">CLEAR</button>
+          <div style="display:flex; gap:6px;">
+            <button id="copyLogsBtn" class="btn" style="padding:2px 6px; font-size:10px;">📋 COPY</button>
+            <button id="clearLogsBtn" class="btn" style="padding:2px 6px; font-size:10px;">CLEAR</button>
+          </div>
         </div>
         <div id="consoleOutput" class="console-output"></div>
       </div>
     </div>
   </div>
 
+  <!-- Status Bar -->
   <div class="status-bar">
-    <span id="statusMsg">READY</span>
-    <span>GRUVBOX • IN-BROWSER XCC COMPILER • PRESS '📖 DOCS' FOR QUICK REFERENCE</span>
+    <div style="display:flex; align-items:center; gap:12px;">
+      <span id="statusMsg">READY</span>
+      <span id="workspaceStats" style="color:var(--fg4); font-size:11px;">3 files</span>
+    </div>
+    <span>GRUVBOX • IN-BROWSER C COMPILER • PRESS '📖 DOCS' FOR QUICK REFERENCE</span>
+  </div>
+
+  <!-- Tools Modal -->
+  <div id="toolsModal" class="modal-backdrop" style="display: none;">
+    <div class="modal-window tools-modal-window">
+      <div class="modal-header">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span class="logo-badge">TOOLKIT</span>
+          <span>COMPILER PIPELINE & WASM SUITE</span>
+        </div>
+        <button id="closeToolsBtn" class="btn" style="padding:2px 8px; font-size:12px;">✕ CLOSE (Esc)</button>
+      </div>
+
+      <!-- Tools Tab Bar -->
+      <div class="tools-tab-bar">
+        <button class="tools-tab active" data-tool="pipeline">🚀 Integrated Pipeline</button>
+        <button class="tools-tab" data-tool="porffor">⚡ Porffor (JS ➔ C)</button>
+        <button class="tools-tab" data-tool="binaryen">✨ Binaryen (wasm-opt)</button>
+        <button class="tools-tab" data-tool="wabt">📄 WABT (WAT / Decompile)</button>
+        <button class="tools-tab" data-tool="runner">🔍 Runner & Inspector</button>
+      </div>
+
+      <div class="modal-body tools-modal-body">
+        <!-- 1. Integrated Pipeline Pane -->
+        <div id="pane-tool-pipeline" class="tool-pane active">
+          <div class="tool-toolbar">
+            <div class="pipeline-flow-steps">
+              <span class="pipe-step">1. JS (Porffor)</span> ➔
+              <span class="pipe-step">2. C (Compiler)</span> ➔
+              <span class="pipe-step">3. Binaryen (-O3)</span> ➔
+              <span class="pipe-step">4. WABT / Runner</span>
+            </div>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <select id="pipePresetSelect" class="dropdown">
+                <option value="fib_js">Preset: Fibonacci (JS)</option>
+                <option value="math_js">Preset: Mandelbrot Math (JS)</option>
+              </select>
+              <button id="btnRunFullPipeline" class="btn btn-primary">▶ Run Full Pipeline</button>
+            </div>
+          </div>
+
+          <div class="tool-grid-2">
+            <div class="tool-col">
+              <div class="tool-sub-header">
+                <span>Input JavaScript</span>
+                <button id="btnPipelineStepPorffor" class="btn btn-sm">Transpile to C ➔</button>
+              </div>
+              <textarea id="pipeJsInput" class="tool-textarea" spellcheck="false"></textarea>
+            </div>
+            <div class="tool-col">
+              <div class="tool-sub-header">
+                <span>Output / Final Optimized WAT</span>
+                <div style="display:flex; gap:6px;">
+                  <span id="pipeMetricsBadge" class="badge-metric" style="display:none;">0 bytes</span>
+                  <button id="btnPipeInsertToVfs" class="btn btn-sm btn-orange" disabled>+ Save to Workspace</button>
+                  <button id="btnPipeToRunner" class="btn btn-sm btn-primary" disabled>▶ Runner</button>
+                </div>
+              </div>
+              <textarea id="pipeOutput" class="tool-textarea tool-readonly" readonly spellcheck="false"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. Porffor Pane -->
+        <div id="pane-tool-porffor" class="tool-pane">
+          <div class="tool-toolbar">
+            <span>Transpile JavaScript algorithms directly into pure C with <a href="https://github.com/CanadaHonk/porffor" target="_blank" style="color:var(--yellow-bright)">Porffor</a>.</span>
+            <div style="display:flex; gap:8px;">
+              <select id="porfforPresetSelect" class="dropdown">
+                <option value="basic_js">Hello & Arithmetic</option>
+                <option value="bitwise_js">Bitwise Popcount</option>
+              </select>
+              <button id="btnPorfforCompile" class="btn btn-primary">⚡ Generate C</button>
+            </div>
+          </div>
+
+          <div class="tool-grid-2">
+            <div class="tool-col">
+              <div class="tool-sub-header">JavaScript Source</div>
+              <textarea id="porfforSourceInput" class="tool-textarea" spellcheck="false"></textarea>
+            </div>
+            <div class="tool-col">
+              <div class="tool-sub-header">
+                <span>Generated C Code</span>
+                <button id="btnPorfforCreateShader" class="btn btn-sm btn-orange" disabled>+ Create Shader (.c)</button>
+              </div>
+              <textarea id="porfforCOutput" class="tool-textarea tool-readonly" readonly spellcheck="false"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Binaryen Pane -->
+        <div id="pane-tool-binaryen" class="tool-pane">
+          <div class="tool-toolbar">
+            <div style="display:flex; gap:8px; align-items:center;">
+              <label>Target Shader:</label>
+              <select id="binaryenShaderSelect" class="dropdown"></select>
+              <select id="binaryenLevelSelect" class="dropdown">
+                <option value="O3">-O3 (Aggressive Optimization)</option>
+                <option value="O2">-O2 (Standard)</option>
+                <option value="O1">-O1 (Light)</option>
+                <option value="Oz">-Oz (Size Aggressive)</option>
+                <option value="Os">-Os (Size)</option>
+              </select>
+              <button id="btnBinaryenRunOpt" class="btn btn-primary">✨ wasm-opt</button>
+            </div>
+            <div style="display:flex; gap:8px;">
+              <span id="binaryenMetricBadge" class="badge-metric" style="display:none;">0% reduction</span>
+              <button id="btnBinaryenApply" class="btn btn-sm btn-orange" disabled>✔ Apply to Workspace</button>
+              <button id="btnBinaryenDownload" class="btn btn-sm" disabled>💾 Save .wasm</button>
+            </div>
+          </div>
+
+          <div class="tool-grid-2">
+            <div class="tool-col">
+              <div class="tool-sub-header">Original WASM (WAT Disassembly)</div>
+              <textarea id="binaryenOriginalWat" class="tool-textarea tool-readonly" readonly spellcheck="false" placeholder="Compile a shader in Laundry or select one from the dropdown..."></textarea>
+            </div>
+            <div class="tool-col">
+              <div class="tool-sub-header">Optimized WASM (WAT)</div>
+              <textarea id="binaryenOptWat" class="tool-textarea tool-readonly" readonly spellcheck="false"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. WABT Pane -->
+        <div id="pane-tool-wabt" class="tool-pane">
+          <div class="tool-toolbar">
+            <div style="display:flex; gap:8px; align-items:center;">
+              <label>Target Shader:</label>
+              <select id="wabtShaderSelect" class="dropdown"></select>
+              <button id="btnWabtWasm2Wat" class="btn">wasm2wat (Disassemble)</button>
+              <button id="btnWabtDecompile" class="btn">wasm-decompile (C-like)</button>
+              <button id="btnWabtWat2Wasm" class="btn btn-primary">wat2wasm (Compile)</button>
+            </div>
+            <div style="display:flex; gap:8px;">
+              <button id="btnWabtSaveToVfs" class="btn btn-sm btn-orange">+ Save to Workspace</button>
+            </div>
+          </div>
+
+          <div class="tool-grid-2">
+            <div class="tool-col">
+              <div class="tool-sub-header">WAT Editor (WebAssembly Text)</div>
+              <textarea id="wabtWatInput" class="tool-textarea" spellcheck="false"></textarea>
+            </div>
+            <div class="tool-col">
+              <div class="tool-sub-header">Decompiled Output / WASM Binary</div>
+              <textarea id="wabtDecompileOutput" class="tool-textarea tool-readonly" readonly spellcheck="false"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5. Runner & Inspector Pane -->
+        <div id="pane-tool-runner" class="tool-pane">
+          <div class="tool-toolbar">
+            <div style="display:flex; gap:8px; align-items:center;">
+              <label>Shader to Inspect:</label>
+              <select id="runnerShaderSelect" class="dropdown"></select>
+              <button id="btnRunnerLoadShader" class="btn btn-primary">🔍 Inspect & Instantiate</button>
+            </div>
+            <button id="btnClearRunnerLogs" class="btn btn-sm">Clear Logs</button>
+          </div>
+
+          <div class="tool-grid-2">
+            <div class="tool-col" style="flex: 0 0 320px;">
+              <div class="tool-sub-header">Exported Functions & Memory</div>
+              <div id="runnerExportsList" class="runner-exports-list">
+                <div style="color:var(--gray); padding:12px; font-size:12px;">Select a compiled shader to inspect.</div>
+              </div>
+            </div>
+            <div class="tool-col">
+              <div class="tool-sub-header">WASM Execution Console / WASI Emulation</div>
+              <textarea id="runnerConsoleOutput" class="tool-textarea tool-readonly" readonly spellcheck="false"></textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Documentation Modal -->
@@ -137,41 +355,7 @@ uint32_t _start(uint8_t* pixels, uint32_t width, uint32_t height, float time) {
     return 1;
 }</code></pre>
 
-        <h3>4. Fast Portable Math Functions</h3>
-        <p>For standalone WebAssembly without external libc dependencies, use fast polynomial & Newton approximations:</p>
-        <pre><code class="language-c">// Fast square root (Newton's method)
-static float sqrt_fast(float x) {
-    if (x &lt;= 0.0f) return 0.0f;
-    float g = x * 0.5f;
-    for (int i = 0; i &lt; 5; ++i) g = 0.5f * (g + x / g);
-    return g;
-}
-
-// Fast sine & cosine (Bhaskara polynomial)
-static float sin_fast(float x) {
-    float k = (int)(x * 0.1591549f);
-    x = x - k * 6.2831853f;
-    if (x &lt; -3.14159265f) x += 6.2831853f;
-    if (x &gt;  3.14159265f) x -= 6.2831853f;
-    float a = x &lt; 0 ? -x : x;
-    return (16.0f * x * (3.14159265f - a)) / (49.348022f - 4.0f * a * (3.14159265f - a));
-}
-static float cos_fast(float x) { return sin_fast(x + 1.5707963f); }</code></pre>
-
-        <h3>5. Multi-Shader Shared Memory Pipeline</h3>
-        <p>Multiple shaders can read/write the same shared memory buffer consecutively:</p>
-        <pre><code class="language-javascript">// 1. Single shared memory allocated once
-const mem = wash_memory(PARTICLE_BYTES + PIXEL_BYTES);
-
-// 2. Both shaders bound to the same memory
-const simShader    = await wash_load(shaders["simulate.wasm"], mem);
-const renderShader = await wash_load(shaders["render.wasm"], mem);
-
-// 3. Sequential pipeline executed every frame
-wash_run(simShader, particlesPtr, width, height, numParticles);
-wash_run(renderShader, particlesPtr, pixelsPtr, width, height);</code></pre>
-
-        <h3>6. Keyboard Shortcuts</h3>
+        <h3>4. Keyboard Shortcuts</h3>
         <table class="modal-table">
           <thead>
             <tr>
@@ -190,11 +374,11 @@ wash_run(renderShader, particlesPtr, pixelsPtr, width, height);</code></pre>
             </tr>
             <tr>
               <td><code>Esc</code></td>
-              <td>Close documentation modal.</td>
+              <td>Close active modal window.</td>
             </tr>
             <tr>
               <td><code>Drag & Drop .zip</code></td>
-              <td>Import project archive.</td>
+              <td>Import project archive into simulated workspace.</td>
             </tr>
           </tbody>
         </table>
