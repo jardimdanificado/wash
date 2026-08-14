@@ -11,13 +11,14 @@ import { inspectWasm, instantiateWasm } from "./tools/runner.js";
 // =============================================================================
 const tabList = document.querySelector("#tabList");
 const addTabBtn = document.querySelector("#addTabBtn");
-const codeEditor = document.querySelector("#codeEditor");
-const codeHighlight = document.querySelector("#codeHighlight");
+const monacoHost = document.querySelector("#monacoEditorContainer");
 const compileBtn = document.querySelector("#compileBtn");
 const downloadBtn = document.querySelector("#downloadBtn");
 const uploadZipBtn = document.querySelector("#uploadZipBtn");
 const zipFileInput = document.querySelector("#zipFileInput");
-const presetSelect = document.querySelector("#presetSelect");
+const presetsBtn = document.querySelector("#presetsBtn");
+const closePresetsBtn = document.querySelector("#closePresetsBtn");
+const presetsModal = document.querySelector("#presetsModal");
 const playPauseBtn = document.querySelector("#playPauseBtn");
 const clearLogsBtn = document.querySelector("#clearLogsBtn");
 const copyLogsBtn = document.querySelector("#copyLogsBtn");
@@ -27,6 +28,8 @@ const ctx = canvas.getContext("2d");
 const fpsStat = document.querySelector("#fpsStat");
 const statusMsg = document.querySelector("#statusMsg");
 const workspaceStats = document.querySelector("#workspaceStats");
+const cursorPos = document.querySelector("#cursorPos");
+const editorLanguage = document.querySelector("#editorLanguage");
 
 // Docs Modal
 const docsBtn = document.querySelector("#docsBtn");
@@ -57,8 +60,10 @@ const vfsDropZone = document.querySelector("#vfsDropZone");
 // =============================================================================
 // State Management
 // =============================================================================
-const vfs = new Map(); // path -> { path, name, type, content, isBinary }
-let openTabs = [];     // paths currently open in the tab bar
+// VFS Map: cleanPath -> { path: string, name: string, type: 'c'|'js'|'wat'|'wasm'|'other', content: string|Uint8Array, isBinary: boolean, model: monaco.editor.ITextModel }
+const vfs = new Map();
+const folderCollapsedState = new Map(); // folderPath -> boolean
+let openTabs = [];
 let activeFilePath = null;
 let compiledShaders = {}; // filename -> Uint8Array
 let compilerWorker = null;
@@ -66,6 +71,10 @@ let isPlaying = true;
 let animFrameId = null;
 let currentOnFrame = null;
 let washJsSource = "";
+
+// Monaco Editor Instance
+let monacoEditor = null;
+let monacoApi = null;
 
 // Pointer Coordinates & Interaction
 let mouseX = 0.5, mouseY = 0.5, isMouseDown = 0;
@@ -124,6 +133,128 @@ function fallbackCopy(text) {
 }
 
 // =============================================================================
+// Monaco Editor Integration with Gruvbox Dark Theme
+// =============================================================================
+function getMonacoLanguage(filename) {
+    const ext = getFileExtension(filename);
+    if (ext === "c" || ext === "h") return "c";
+    if (ext === "js" || ext === "mjs") return "javascript";
+    if (ext === "wat") return "wat";
+    if (ext === "json") return "json";
+    if (ext === "md") return "markdown";
+    return "plaintext";
+}
+
+async function initMonaco() {
+    return new Promise((resolve) => {
+        if (window.monaco) {
+            setupMonaco(window.monaco);
+            resolve();
+            return;
+        }
+
+        window.require.config({
+            paths: { vs: "https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs" }
+        });
+
+        window.require(["vs/editor/editor.main"], () => {
+            setupMonaco(window.monaco);
+            resolve();
+        });
+    });
+}
+
+function setupMonaco(monaco) {
+    monacoApi = monaco;
+
+    // Define custom Gruvbox Dark Theme for Monaco
+    monaco.editor.defineTheme("gruvbox-dark", {
+        base: "vs-dark",
+        inherit: true,
+        rules: [
+            { token: "", foreground: "ebdbb2", background: "1d2021" },
+            { token: "comment", foreground: "928374", fontStyle: "italic" },
+            { token: "keyword", foreground: "fb4934", fontStyle: "bold" },
+            { token: "identifier", foreground: "ebdbb2" },
+            { token: "type", foreground: "8ec07c" },
+            { token: "type.identifier", foreground: "fabd2f" },
+            { token: "string", foreground: "b8bb26" },
+            { token: "number", foreground: "d3869b" },
+            { token: "delimiter", foreground: "a89984" },
+            { token: "operator", foreground: "83a598" }
+        ],
+        colors: {
+            "editor.background": "#1d2021",
+            "editor.foreground": "#ebdbb2",
+            "editor.lineHighlightBackground": "#282828",
+            "editorCursor.foreground": "#fbf1c7",
+            "editorWhitespace.foreground": "#504945",
+            "editorIndentGuide.background": "#3c3836",
+            "editorIndentGuide.activeBackground": "#504945",
+            "editor.selectionBackground": "#504945",
+            "editor.inactiveSelectionBackground": "#3c3836",
+            "editorLineNumber.foreground": "#7c6f64",
+            "editorLineNumber.activeForeground": "#fabd2f",
+            "minimap.background": "#1d2021"
+        }
+    });
+
+    monacoEditor = monaco.editor.create(monacoHost, {
+        theme: "gruvbox-dark",
+        fontFamily: "'JetBrains Mono', 'Fira Code', Menlo, Consolas, monospace",
+        fontSize: 13,
+        lineHeight: 21,
+        automaticLayout: true,
+        tabSize: 4,
+        insertSpaces: true,
+        minimap: { enabled: true },
+        scrollBeyondLastLine: false,
+        smoothScrolling: true,
+        bracketPairColorization: { enabled: true },
+        renderLineHighlight: "all"
+    });
+
+    // Cursor position tracking
+    monacoEditor.onDidChangeCursorPosition((e) => {
+        if (cursorPos) {
+            cursorPos.textContent = `Ln ${e.position.lineNumber}, Col ${e.position.column}`;
+        }
+    });
+
+    // Compilation Shortcuts inside Monaco: Ctrl+Enter / Cmd+Enter & Ctrl+S / Cmd+S
+    monacoEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
+        compileAndRun();
+    });
+
+    monacoEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+        compileAndRun();
+    });
+}
+
+function getOrCreateModelForFile(file) {
+    if (!monacoApi) return null;
+    if (file.model) return file.model;
+
+    const lang = getMonacoLanguage(file.name);
+    const uri = monacoApi.Uri.parse(`file:///${file.path}`);
+    let model = monacoApi.editor.getModel(uri);
+
+    if (!model) {
+        const textContent = file.isBinary ? `// [Binary File: ${file.name} - ${file.content?.byteLength || 0} bytes]` : (file.content || "");
+        model = monacoApi.editor.createModel(textContent, lang, uri);
+        
+        if (!file.isBinary) {
+            model.onDidChangeContent(() => {
+                file.content = model.getValue();
+            });
+        }
+    }
+
+    file.model = model;
+    return model;
+}
+
+// =============================================================================
 // Virtual Filesystem (VFS) Operations
 // =============================================================================
 function getFileExtension(filename) {
@@ -144,18 +275,36 @@ function vfsSetFile(path, content, isBinary = false) {
     const cleanPath = path.replace(/^\/+/, "");
     const name = cleanPath.split("/").pop();
     const type = detectFileType(name);
-    vfs.set(cleanPath, {
-        path: cleanPath,
-        name,
-        type,
-        content,
-        isBinary
-    });
+
+    let file = vfs.get(cleanPath);
+    if (file) {
+        file.content = content;
+        file.isBinary = isBinary;
+        if (file.model && !isBinary && typeof content === "string") {
+            file.model.setValue(content);
+        }
+    } else {
+        file = {
+            path: cleanPath,
+            name,
+            type,
+            content,
+            isBinary,
+            model: null
+        };
+        vfs.set(cleanPath, file);
+    }
+
     renderVfsTree();
     updateWorkspaceStats();
+    return file;
 }
 
 function vfsDeleteFile(path) {
+    const file = vfs.get(path);
+    if (file && file.model) {
+        file.model.dispose();
+    }
     vfs.delete(path);
     closeTab(path);
     renderVfsTree();
@@ -165,8 +314,15 @@ function vfsDeleteFile(path) {
 function vfsRenameFile(oldPath, newPath) {
     const file = vfs.get(oldPath);
     if (!file) return;
+    
+    if (file.model) {
+        file.model.dispose();
+        file.model = null;
+    }
+    
     vfs.delete(oldPath);
     vfsSetFile(newPath, file.content, file.isBinary);
+    
     const tabIdx = openTabs.indexOf(oldPath);
     if (tabIdx !== -1) {
         openTabs[tabIdx] = newPath;
@@ -183,56 +339,137 @@ function updateWorkspaceStats() {
     workspaceStats.textContent = `${count} file${count === 1 ? "" : "s"}`;
 }
 
-// Render VFS Tree
+// Build and Render Hierarchical VFS Tree
+function buildVfsHierarchy() {
+    const root = { name: "", isFolder: true, path: "", children: new Map() };
+
+    for (const [filePath, file] of vfs.entries()) {
+        const parts = filePath.split("/");
+        let current = root;
+
+        for (let i = 0; i < parts.length; i++) {
+            const part = parts[i];
+            const isLast = i === parts.length - 1;
+            const currentPath = parts.slice(0, i + 1).join("/");
+
+            if (isLast) {
+                current.children.set(part, { ...file, isFolder: false });
+            } else {
+                if (!current.children.has(part)) {
+                    current.children.set(part, {
+                        name: part,
+                        path: currentPath,
+                        isFolder: true,
+                        children: new Map()
+                    });
+                }
+                current = current.children.get(part);
+            }
+        }
+    }
+    return root;
+}
+
 function renderVfsTree() {
     if (!vfsTreeContainer) return;
     vfsTreeContainer.innerHTML = "";
 
-    const sortedPaths = Array.from(vfs.keys()).sort();
+    const hierarchy = buildVfsHierarchy();
 
-    sortedPaths.forEach(path => {
-        const file = vfs.get(path);
-        const node = document.createElement("div");
-        node.className = `vfs-node ${activeFilePath === path ? "active" : ""}`;
-
-        let icon = "📄";
-        if (file.type === "c") icon = "🔨";
-        else if (file.type === "js") icon = "⚡";
-        else if (file.type === "wat") icon = "📑";
-        else if (file.type === "wasm") icon = "⚙️";
-
-        node.innerHTML = `
-            <div class="vfs-node-content" title="${path}">
-                <span class="vfs-icon">${icon}</span>
-                <span>${file.name}</span>
-            </div>
-            <div class="vfs-node-actions">
-                <button class="icon-btn btn-rename" title="Rename">✏️</button>
-                <button class="icon-btn btn-delete" title="Delete">🗑️</button>
-            </div>
-        `;
-
-        node.addEventListener("click", () => openFileInEditor(path));
-
-        const renameBtn = node.querySelector(".btn-rename");
-        renameBtn.addEventListener("click", (e) => {
-            e.stopPropagation();
-            const newName = prompt("New filename / path:", path);
-            if (newName && newName.trim() && newName !== path) {
-                vfsRenameFile(path, newName.trim());
-            }
+    function renderNode(node, container) {
+        const entries = Array.from(node.children.entries()).sort((a, b) => {
+            if (a[1].isFolder !== b[1].isFolder) return a[1].isFolder ? -1 : 1;
+            return a[0].localeCompare(b[0]);
         });
 
-        const deleteBtn = node.querySelector(".btn-delete");
-        deleteBtn.addEventListener("click", (e) => {
-            e.stopPropagation();
-            if (confirm(`Delete file "${path}"?`)) {
-                vfsDeleteFile(path);
+        entries.forEach(([name, item]) => {
+            if (item.isFolder) {
+                const folderDiv = document.createElement("div");
+                folderDiv.className = "vfs-folder";
+
+                const isCollapsed = folderCollapsedState.get(item.path) || false;
+
+                const header = document.createElement("div");
+                header.className = "vfs-folder-header";
+                header.innerHTML = `
+                    <div class="vfs-node-content" title="${item.path}">
+                        <span class="vfs-icon">${isCollapsed ? "📁" : "📂"}</span>
+                        <span>${name}</span>
+                    </div>
+                    <div class="vfs-node-actions">
+                        <button class="icon-btn btn-add-in-folder" title="New file in folder">+📄</button>
+                    </div>
+                `;
+
+                header.querySelector(".btn-add-in-folder").addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    const newFileName = prompt(`Enter new filename in folder ${item.path}:`, "helper.c");
+                    if (newFileName && newFileName.trim()) {
+                        const fullPath = `${item.path}/${newFileName.trim().replace(/^\/+/, "")}`;
+                        vfsSetFile(fullPath, "");
+                        openFileInEditor(fullPath);
+                    }
+                });
+
+                const childrenDiv = document.createElement("div");
+                childrenDiv.className = `vfs-folder-children ${isCollapsed ? "collapsed" : ""}`;
+
+                header.addEventListener("click", () => {
+                    const nextCollapsed = !childrenDiv.classList.contains("collapsed");
+                    childrenDiv.classList.toggle("collapsed", nextCollapsed);
+                    folderCollapsedState.set(item.path, nextCollapsed);
+                    header.querySelector(".vfs-icon").textContent = nextCollapsed ? "📁" : "📂";
+                });
+
+                renderNode(item, childrenDiv);
+
+                folderDiv.appendChild(header);
+                folderDiv.appendChild(childrenDiv);
+                container.appendChild(folderDiv);
+            } else {
+                const nodeDiv = document.createElement("div");
+                nodeDiv.className = `vfs-node ${activeFilePath === item.path ? "active" : ""}`;
+
+                let icon = "📄";
+                if (item.type === "c") icon = "🔨";
+                else if (item.type === "js") icon = "⚡";
+                else if (item.type === "wat") icon = "📑";
+                else if (item.type === "wasm") icon = "⚙️";
+
+                nodeDiv.innerHTML = `
+                    <div class="vfs-node-content" title="${item.path}">
+                        <span class="vfs-icon">${icon}</span>
+                        <span>${item.name}</span>
+                    </div>
+                    <div class="vfs-node-actions">
+                        <button class="icon-btn btn-rename" title="Rename">✏️</button>
+                        <button class="icon-btn btn-delete" title="Delete">🗑️</button>
+                    </div>
+                `;
+
+                nodeDiv.addEventListener("click", () => openFileInEditor(item.path));
+
+                nodeDiv.querySelector(".btn-rename").addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    const newPath = prompt("Rename path / filename:", item.path);
+                    if (newPath && newPath.trim() && newPath.trim() !== item.path) {
+                        vfsRenameFile(item.path, newPath.trim());
+                    }
+                });
+
+                nodeDiv.querySelector(".btn-delete").addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    if (confirm(`Delete file "${item.path}"?`)) {
+                        vfsDeleteFile(item.path);
+                    }
+                });
+
+                container.appendChild(nodeDiv);
             }
         });
+    }
 
-        vfsTreeContainer.appendChild(node);
-    });
+    renderNode(hierarchy, vfsTreeContainer);
 }
 
 function openFileInEditor(path) {
@@ -253,22 +490,20 @@ function closeTab(path) {
     renderTabs();
     if (activeFilePath) {
         switchTab(activeFilePath);
-    } else {
-        codeEditor.value = "";
-        updateHighlight();
     }
 }
 
 // Sidebar Toggle
 toggleSidebarBtn?.addEventListener("click", () => {
     fileExplorer.classList.toggle("collapsed");
+    setTimeout(() => monacoEditor?.layout(), 180);
 });
 
 // VFS New File & New Folder
 vfsNewFileBtn?.addEventListener("click", () => {
     const filename = prompt("Enter new filename (e.g. shader2.c, helper.js, module.wat):", "shader2.c");
     if (!filename || !filename.trim()) return;
-    const clean = filename.trim();
+    const clean = filename.trim().replace(/^\/+/, "");
     if (vfs.has(clean)) {
         alert("A file with this name already exists.");
         return;
@@ -285,10 +520,9 @@ vfsNewFileBtn?.addEventListener("click", () => {
 vfsNewFolderBtn?.addEventListener("click", () => {
     const folder = prompt("Enter folder name:", "shaders");
     if (!folder || !folder.trim()) return;
-    const clean = folder.trim().replace(/\/+$/, "");
+    const clean = folder.trim().replace(/\/+$/, "").replace(/^\/+/, "");
     const placeholder = `${clean}/readme.txt`;
-    vfsSetFile(placeholder, `Folder ${clean}`);
-    renderVfsTree();
+    vfsSetFile(placeholder, `Folder: ${clean}`);
 });
 
 vfsExportZipBtn?.addEventListener("click", () => downloadBtn.click());
@@ -324,73 +558,25 @@ function renderTabs() {
 }
 
 function switchTab(newPath) {
-    // 1. Flush editor content only into the PREVIOUSLY active file if different
-    if (activeFilePath && activeFilePath !== newPath && vfs.has(activeFilePath)) {
-        const prevFile = vfs.get(activeFilePath);
-        if (prevFile && !prevFile.isBinary) {
-            prevFile.content = codeEditor.value;
-        }
-    }
-
-    // 2. Set new active file and update editor
     activeFilePath = newPath;
     const file = vfs.get(newPath);
-    if (file) {
-        codeEditor.value = file.isBinary ? `// [Binary File: ${file.name} - ${file.content?.byteLength || 0} bytes]` : file.content;
-        codeEditor.readOnly = !!file.isBinary;
-        updateHighlight();
-        syncScroll();
+
+    if (file && monacoEditor) {
+        const model = getOrCreateModelForFile(file);
+        if (model) {
+            monacoEditor.setModel(model);
+            monacoEditor.updateOptions({ readOnly: !!file.isBinary });
+        }
+
+        if (editorLanguage) {
+            editorLanguage.textContent = getMonacoLanguage(file.name).toUpperCase();
+        }
     }
 
     renderTabs();
 }
 
-function updateHighlight() {
-    if (!activeFilePath) return;
-    const file = vfs.get(activeFilePath);
-    if (!file) return;
-
-    let lang = "c";
-    if (file.type === "js") lang = "javascript";
-    else if (file.type === "wat") lang = "wasm";
-
-    codeHighlight.className = `language-${lang}`;
-    codeHighlight.textContent = codeEditor.value + (codeEditor.value.endsWith("\n") ? " " : "");
-
-    if (typeof Prism !== "undefined") {
-        Prism.highlightElement(codeHighlight);
-    }
-}
-
-function syncScroll() {
-    codeHighlight.parentElement.scrollTop = codeEditor.scrollTop;
-    codeHighlight.parentElement.scrollLeft = codeEditor.scrollLeft;
-}
-
-codeEditor.addEventListener("input", () => {
-    updateHighlight();
-    if (activeFilePath && vfs.has(activeFilePath)) {
-        const cur = vfs.get(activeFilePath);
-        if (!cur.isBinary) cur.content = codeEditor.value;
-    }
-});
-codeEditor.addEventListener("scroll", syncScroll);
-
-codeEditor.addEventListener("keydown", (e) => {
-    if (e.key === "Tab") {
-        e.preventDefault();
-        const start = codeEditor.selectionStart;
-        const end = codeEditor.selectionEnd;
-        codeEditor.value = codeEditor.value.substring(0, start) + "    " + codeEditor.value.substring(end);
-        codeEditor.selectionStart = codeEditor.selectionEnd = start + 4;
-        updateHighlight();
-        if (activeFilePath && vfs.has(activeFilePath)) {
-            vfs.get(activeFilePath).content = codeEditor.value;
-        }
-    }
-});
-
-addTabBtn.addEventListener("click", () => {
+addTabBtn?.addEventListener("click", () => {
     const cFiles = Array.from(vfs.keys()).filter(k => k.endsWith(".c"));
     const name = `shader${cFiles.length + 1}.c`;
     const defaultCode = `#include <stdint.h>
@@ -420,8 +606,9 @@ function loadPreset(presetKey) {
     const preset = PRESETS[presetKey];
     if (!preset) return;
 
-    // Reset active path BEFORE populating VFS so switchTab doesn't flush editor into new preset
+    // Dispose previous Monaco models and clear VFS
     activeFilePath = null;
+    vfs.forEach(f => { if (f.model) f.model.dispose(); });
     vfs.clear();
     openTabs = [];
 
@@ -432,7 +619,8 @@ function loadPreset(presetKey) {
             name: cleanName,
             type: detectFileType(cleanName),
             content: tab.code,
-            isBinary: false
+            isBinary: false,
+            model: null
         });
         openTabs.push(cleanName);
     });
@@ -448,7 +636,6 @@ function loadPreset(presetKey) {
     compileAndRun();
 }
 
-presetSelect.addEventListener("change", (e) => loadPreset(e.target.value));
 
 // =============================================================================
 // Compiler Worker & Compilation Pipeline
@@ -492,13 +679,7 @@ async function compileShader(filename, code) {
     });
 }
 
-// Compile all C shaders and execute pipeline
 async function compileAndRun() {
-    if (activeFilePath && vfs.has(activeFilePath)) {
-        const cur = vfs.get(activeFilePath);
-        if (!cur.isBinary) cur.content = codeEditor.value;
-    }
-
     log("Starting multi-shader compilation pipeline...", "info");
     statusMsg.textContent = "COMPILING...";
     statusMsg.style.color = "var(--yellow-bright)";
@@ -518,13 +699,16 @@ async function compileAndRun() {
             const res = await compileShader(file.name, file.content);
             const importedBytes = makeWasmImportMemory(res.wasmBytes);
             compiledShaders[res.outFileName] = new Uint8Array(importedBytes);
+            
             vfs.set(res.outFileName, {
                 path: res.outFileName,
                 name: res.outFileName,
                 type: "wasm",
                 content: new Uint8Array(importedBytes),
-                isBinary: true
+                isBinary: true,
+                model: null
             });
+
             log(`✔ ${res.outFileName} built successfully (${importedBytes.byteLength} B)`, "ok");
         }
 
@@ -665,9 +849,10 @@ async function loadZipArchive(file) {
         log(`Reading ZIP archive: ${file.name}...`, "info");
         const zip = await JSZip.loadAsync(file);
 
+        activeFilePath = null;
+        vfs.forEach(f => { if (f.model) f.model.dispose(); });
         vfs.clear();
         openTabs = [];
-        activeFilePath = null;
 
         for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
             if (zipEntry.dir) continue;
@@ -732,11 +917,6 @@ window.addEventListener("drop", async (e) => {
 });
 
 downloadBtn.addEventListener("click", async () => {
-    if (activeFilePath && vfs.has(activeFilePath)) {
-        const cur = vfs.get(activeFilePath);
-        if (!cur.isBinary) cur.content = codeEditor.value;
-    }
-
     if (typeof JSZip === "undefined") {
         alert("JSZip library is still loading.");
         return;
@@ -843,6 +1023,32 @@ closeToolsBtn?.addEventListener("click", () => toolsModal.style.display = "none"
 docsBtn?.addEventListener("click", () => docsModal.style.display = "flex");
 closeDocsBtn?.addEventListener("click", () => docsModal.style.display = "none");
 
+// Presets Modal Listeners
+presetsBtn?.addEventListener("click", () => {
+    presetsModal.style.display = "flex";
+});
+
+closePresetsBtn?.addEventListener("click", () => {
+    presetsModal.style.display = "none";
+});
+
+document.querySelectorAll(".preset-card").forEach(card => {
+    card.addEventListener("click", () => {
+        const key = card.getAttribute("data-preset");
+        if (key) {
+            presetsModal.style.display = "none";
+            loadPreset(key);
+        }
+    });
+});
+
+// Close modals on backdrop click
+[toolsModal, docsModal, presetsModal].forEach(modal => {
+    modal?.addEventListener("click", (e) => {
+        if (e.target === modal) modal.style.display = "none";
+    });
+});
+
 toolsTabs.forEach(tab => {
     tab.addEventListener("click", () => {
         switchToolTab(tab.getAttribute("data-tool"));
@@ -853,6 +1059,7 @@ window.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
         if (toolsModal.style.display !== "none") toolsModal.style.display = "none";
         if (docsModal.style.display !== "none") docsModal.style.display = "none";
+        if (presetsModal.style.display !== "none") presetsModal.style.display = "none";
     }
 });
 
@@ -923,7 +1130,7 @@ if (pipePresetSelect) {
             log("1. Transpiling JS to C (Porffor)...", "info");
             const porfforRes = await compileJsToC(pipeJsInput.value);
 
-            // Step 2: C -> WASM (XCC Compiler Worker)
+            // Step 2: C -> WASM (Compiler Worker)
             log("2. Compiling C to WASM (Compiler Worker)...", "info");
             const xccRes = await compileShader("pipeline_generated.c", porfforRes.cCode);
 
@@ -1068,7 +1275,8 @@ if (btnBinaryenRunOpt) {
                 name,
                 type: "wasm",
                 content: lastOptimizedBytes,
-                isBinary: true
+                isBinary: true,
+                model: null
             });
             renderVfsTree();
             log(`✔ Applied optimized binary to ${name}`, "ok");
@@ -1263,4 +1471,6 @@ btnQuickOpt?.addEventListener("click", async () => {
 // =============================================================================
 // Initial Setup
 // =============================================================================
-loadPreset("pipeline");
+initMonaco().then(() => {
+    loadPreset("pipeline");
+});
