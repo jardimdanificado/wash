@@ -1,4 +1,4 @@
-import { wash_memory, wash_load, wash_run, wash_worker } from "../wash.js";
+import { wash_memory, wash_load, wash_run, wash_worker, makeWasmImportMemory } from "../wash.js";
 import { PRESETS } from "./presets.js";
 
 // DOM Elements
@@ -192,6 +192,7 @@ void* _start(uint8_t* pixels, uint32_t width, uint32_t height) {
 function loadPreset(presetKey) {
     const preset = PRESETS[presetKey];
     if (!preset) return;
+    activeTabId = null; // Reset activeTabId so switchTab doesn't flush previous tab's editor text into the new preset
     tabs = JSON.parse(JSON.stringify(preset.tabs));
     switchTab(tabs[0].id);
     log(`Preset loaded: ${preset.name}`, "info");
@@ -254,7 +255,8 @@ async function compileAndRun() {
         for (const tab of cTabs) {
             log(`Compiling ${tab.name} -> WebAssembly...`, "info");
             const res = await compileShader(tab.name, tab.code);
-            compiledShaders[res.outFileName] = new Uint8Array(res.wasmBytes);
+            const importedBytes = makeWasmImportMemory(res.wasmBytes);
+            compiledShaders[res.outFileName] = new Uint8Array(importedBytes);
             log(`✔ ${res.outFileName} built successfully (${res.wasmBytes.byteLength} B)`, "ok");
         }
 
@@ -475,6 +477,7 @@ return function onFrame({ ctx, imgData }) {
             });
         }
 
+        activeTabId = null;
         tabs = newTabs;
         switchTab(tabs[0].id);
         log(`✔ Successfully imported ${newTabs.length} file(s) from ${file.name}!`, "ok");

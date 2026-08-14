@@ -12,7 +12,7 @@ const workerRegistry = typeof FinalizationRegistry !== "undefined"
 /**
  * Transforms an unlinked WebAssembly module with internal memory into
  * an imported memory module that imports (env, memory).
- * Strictly preserves WebAssembly numerical section ordering (Type=1, Import=2, Function=3, ...).
+ * Strictly preserves WebAssembly numerical section ordering.
  */
 export function makeWasmImportMemory(bytes) {
     const u8 = new Uint8Array(bytes);
@@ -61,7 +61,6 @@ export function makeWasmImportMemory(bytes) {
                 continue;
             }
             if (s.id > 2 && !importInserted) {
-                // Section 2 must come before any section with ID > 2 (e.g. before Section 3 Function)
                 newSections.push(importPayload);
                 importInserted = true;
             }
@@ -241,24 +240,23 @@ export async function wash_load(source, sharedMemory = null, imports = {}) {
         finalImports.env.memory = memObj;
     }
 
-    let bytes = null;
-    if (typeof source === "string") {
-        const res = await fetch(source);
-        bytes = await res.arrayBuffer();
-    } else if (source instanceof Uint8Array) {
-        bytes = source.buffer;
-    } else if (source instanceof ArrayBuffer) {
-        bytes = source;
-    }
-
-    if (bytes && sharedMemory) {
-        bytes = makeWasmImportMemory(bytes);
-    }
-
     let instance;
     let module = null;
 
-    if (bytes) {
+    if (typeof source === "string") {
+        try {
+            const res = await WebAssembly.instantiateStreaming(fetch(source), finalImports);
+            instance = res.instance;
+            module = res.module;
+        } catch (_) {
+            const res = await fetch(source);
+            const bytes = await res.arrayBuffer();
+            const compiled = await WebAssembly.instantiate(bytes, finalImports);
+            instance = compiled.instance;
+            module = compiled.module;
+        }
+    } else if (source instanceof Uint8Array || source instanceof ArrayBuffer) {
+        const bytes = (source instanceof Uint8Array) ? source.buffer : source;
         const res = await WebAssembly.instantiate(bytes, finalImports);
         instance = res.instance;
         module = res.module;
@@ -268,9 +266,12 @@ export async function wash_load(source, sharedMemory = null, imports = {}) {
         instance = (res instanceof WebAssembly.Instance) ? res : (res.instance || res);
     }
 
-    // If module exported its own memory and no shared memory was imported, use exported memory
-    if (instance.exports.memory && !sharedMemory) {
+    // If module declared and exported its own memory, connect wrapper to it
+    if (instance.exports.memory) {
         memObj = instance.exports.memory;
+        if (sharedMemory && typeof sharedMemory === "object" && "memory" in sharedMemory) {
+            sharedMemory.memory = memObj;
+        }
     }
 
     if (instance.exports.__heap_base) {
@@ -280,7 +281,7 @@ export async function wash_load(source, sharedMemory = null, imports = {}) {
         }
     }
 
-    // Ensure memory has enough pages for the requested userSize
+    // Ensure memory has enough pages for userSize
     if (memObj && userSize > 0) {
         const requiredPages = Math.ceil((heapBase + userSize) / 65536);
         const currentPages = memObj.buffer.byteLength / 65536;
