@@ -641,11 +641,10 @@ canvas#viewport {
 .status-bar {
   background: var(--bg0);
   border-top: 1px solid var(--bg1);
-  height: 25px;
-  min-height: 25px;
-  max-height: 25px;
-  line-height: 24px;
-  padding: 0 10px;
+  height: calc(26px + env(safe-area-inset-bottom, 0px));
+  min-height: calc(26px + env(safe-area-inset-bottom, 0px));
+  line-height: 25px;
+  padding: 0 8px;
   padding-bottom: env(safe-area-inset-bottom, 0px);
   display: flex;
   justify-content: space-between;
@@ -930,46 +929,6 @@ canvas#viewport {
   background: var(--bg0-soft);
   color: var(--yellow-bright);
   font-weight: 700;
-}
-
-/* Responsive */
-@media (max-width: 1024px) {
-  body {
-    height: auto;
-    min-height: 100vh;
-    overflow-y: auto;
-  }
-  header {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
-  }
-  .toolbar {
-    flex-wrap: wrap;
-  }
-  .main-layout {
-    flex-direction: column;
-    height: auto;
-  }
-  .file-explorer-pane {
-    width: 100%;
-    max-width: 100%;
-    height: 180px;
-  }
-  .editor-pane {
-    height: 400px;
-  }
-  .preview-pane {
-    width: 100%;
-  }
-  .tool-grid-2 {
-    grid-template-columns: 1fr;
-    grid-template-rows: 1fr 1fr;
-  }
-  .tools-modal-window {
-    width: 98vw;
-    height: 94vh;
-  }
 }
 
 /* Scrollbars */
