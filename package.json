@@ -1,0 +1,26 @@
+{
+  "name": "wash",
+  "version": "1.0.0",
+  "description": "Universal WebAssembly Shared Memory & Compute Pipeline with In-Browser & CLI Tools",
+  "main": "wash.js",
+  "type": "module",
+  "bin": {
+    "laundry": "./bin/laundry.js"
+  },
+  "scripts": {
+    "test": "node bin/laundry.js --help"
+  },
+  "keywords": [
+    "webassembly",
+    "wasm",
+    "shaders",
+    "graphics",
+    "compute",
+    "compiler",
+    "wabt",
+    "binaryen",
+    "porffor"
+  ],
+  "author": "",
+  "license": "MIT"
+}

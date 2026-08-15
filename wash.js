@@ -26,13 +26,19 @@ export function makeWasmImportMemory(bytes) {
         const secStart = pos;
         const secId = u8[pos++];
         let len = 0, shift = 0;
-        while (true) {
+        let valid = false;
+        while (pos < u8.length) {
             const b = u8[pos++];
             len |= (b & 0x7f) << shift;
-            if ((b & 0x80) === 0) break;
             shift += 7;
+            if ((b & 0x80) === 0) {
+                valid = true;
+                break;
+            }
         }
+        if (!valid) break;
         const secEnd = pos + len;
+        if (secEnd > u8.length) break;
         sections.push({ id: secId, data: u8.slice(secStart, secEnd) });
         pos = secEnd;
     }
@@ -42,14 +48,7 @@ export function makeWasmImportMemory(bytes) {
 
     if (!hasImport && hasMemorySec) {
         const importPayload = new Uint8Array([
-            0x02, // Section ID 2 (Import)
-            0x0f, // Length 15
-            0x01, // 1 import entry
-            0x03, 0x65, 0x6e, 0x76, // "env"
-            0x06, 0x6d, 0x65, 0x6d, 0x6f, 0x72, 0x79, // "memory"
-            0x02, // Kind: Memory
-            0x00, // flags: no max
-            0x01  // initial: 1 page
+            0x02, 0x0f, 0x01, 0x03, 0x65, 0x6e, 0x76, 0x06, 0x6d, 0x65, 0x6d, 0x6f, 0x72, 0x79, 0x02, 0x00, 0x01
         ]);
 
         const newSections = [];
@@ -82,7 +81,7 @@ export function makeWasmImportMemory(bytes) {
             cur += s.length;
         }
 
-        return out.buffer;
+        return out;
     }
 
     return bytes;

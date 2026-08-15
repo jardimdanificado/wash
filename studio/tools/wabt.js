@@ -8,9 +8,9 @@ export async function initWabt() {
         if (!window.WabtModule) {
             await new Promise((resolve, reject) => {
                 const script = document.createElement("script");
-                script.src = "https://unpkg.com/wabt@1.0.35/index.js";
+                script.src = "./vendor/wabt.js";
                 script.onload = resolve;
-                script.onerror = () => reject(new Error("Failed to load WABT from CDN"));
+                script.onerror = () => reject(new Error("Failed to load WABT from ./vendor/wabt.js"));
                 document.head.appendChild(script);
             });
         }

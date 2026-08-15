@@ -12,9 +12,7 @@ let porfforCompilePromise = null;
 
 export async function initPorffor() {
     if (!porfforCompilePromise) {
-        porfforCompilePromise = import(
-            "https://esm.sh/gh/CanadaHonk/porffor/compiler/index.js?standalone&target=es2022"
-        ).then(mod => mod.default);
+        porfforCompilePromise = import("../vendor/porffor.js").then(mod => mod.default || mod);
     }
     return porfforCompilePromise;
 }
@@ -34,7 +32,7 @@ export async function compileJsToC(source) {
     };
 
     try {
-        await compile(source, false, false);
+        await compile(source, ["c"]);
     } finally {
         console.log = oldLog;
     }

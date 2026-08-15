@@ -149,7 +149,7 @@ async function initMonaco() {
         }
 
         window.require.config({
-            paths: { vs: "https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs" }
+            paths: { vs: "./vendor/monaco/vs" }
         });
 
         window.require(["vs/editor/editor.main"], () => {
@@ -1747,8 +1747,32 @@ window.addEventListener("keydown", (e) => {
 });
 
 // =============================================================================
+// Mobile Keyboard & Visual Viewport Sync
+// =============================================================================
+function updateVisualViewport() {
+    if (window.visualViewport) {
+        const vh = window.visualViewport.height;
+        document.documentElement.style.setProperty("--visual-vh", `${vh}px`);
+        document.body.style.height = `${vh}px`;
+        if (monacoEditor) {
+            monacoEditor.layout();
+        }
+    }
+}
+
+if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", updateVisualViewport);
+    window.visualViewport.addEventListener("scroll", () => {
+        window.scrollTo(0, 0);
+        updateVisualViewport();
+    });
+    updateVisualViewport();
+}
+
+// =============================================================================
 // Initial Setup
 // =============================================================================
 initMonaco().then(() => {
     loadPreset("pipeline");
+    updateVisualViewport();
 });

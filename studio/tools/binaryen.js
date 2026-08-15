@@ -7,9 +7,16 @@ export async function initBinaryen() {
         if (window.Binaryen) {
             binaryenInstance = window.Binaryen;
         } else {
-            binaryenInstance = await import("https://esm.sh/binaryen@119.0.0");
-            window.Binaryen = binaryenInstance.default || binaryenInstance;
-            binaryenInstance = window.Binaryen;
+            await new Promise((resolve, reject) => {
+                const script = document.createElement("script");
+                script.src = "./vendor/binaryen.js";
+                script.onload = () => {
+                    binaryenInstance = window.Binaryen;
+                    resolve();
+                };
+                script.onerror = () => reject(new Error("Failed to load Binaryen from ./vendor/binaryen.js"));
+                document.head.appendChild(script);
+            });
         }
     }
     return binaryenInstance;

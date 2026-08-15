@@ -42,19 +42,33 @@
   border-radius: 0 !important;
 }
 
+html {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
 body {
   background-color: var(--bg0-hard);
   color: var(--fg1);
   font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1.5;
-  height: 100vh;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
   height: 100dvh;
-  min-height: -webkit-fill-available;
+  height: var(--visual-vh, 100dvh);
+  max-height: var(--visual-vh, 100dvh);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   user-select: none;
+  touch-action: pan-x pan-y;
 }
 
 ::selection {
