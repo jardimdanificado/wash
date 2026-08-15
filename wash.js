@@ -230,6 +230,14 @@ export async function wash_load(source, sharedMemory = null, imports = {}) {
     let heapBase = 65536;
     let userSize = 0;
 
+    const wasiProxy = new Proxy(finalImports.wasi_snapshot_preview1 || {}, {
+        get: (target, prop) => {
+            if (prop in target) return target[prop];
+            return () => 0;
+        }
+    });
+    finalImports.wasi_snapshot_preview1 = wasiProxy;
+
     if (sharedMemory) {
         memObj = sharedMemory.memory ? sharedMemory.memory : sharedMemory;
         if (sharedMemory.heapBase) heapBase = sharedMemory.heapBase;
@@ -255,7 +263,11 @@ export async function wash_load(source, sharedMemory = null, imports = {}) {
             module = compiled.module;
         }
     } else if (source instanceof Uint8Array || source instanceof ArrayBuffer) {
-        const bytes = (source instanceof Uint8Array) ? source.buffer : source;
+        const bytes = (source instanceof Uint8Array)
+            ? (source.byteOffset === 0 && source.byteLength === source.buffer.byteLength
+                ? source.buffer
+                : source.buffer.slice(source.byteOffset, source.byteOffset + source.byteLength))
+            : source;
         const res = await WebAssembly.instantiate(bytes, finalImports);
         instance = res.instance;
         module = res.module;
@@ -302,8 +314,16 @@ export async function wash_load(source, sharedMemory = null, imports = {}) {
         readString: (ptr) => wash_read_string(memObj, ptr),
         writeString: (str, offset = 0) => wash_write_string(memObj, str, heapBase + offset),
         run: (...args) => {
-            if (!instance.exports._start) return;
-            if (args.length === 0) return instance.exports._start(heapBase);
+            const candidates = [
+                instance.exports.v_start,
+                instance.exports.render,
+                instance.exports._start,
+                instance.exports.main
+            ].filter(fn => typeof fn === "function");
+
+            const entry = candidates.find(fn => fn.length > 0) || candidates[0];
+            if (!entry) return;
+            if (args.length === 0) return entry(heapBase);
 
             let scratchOffset = userSize > 0 ? userSize : 65536;
             const finalArgs = args.map(arg => {
@@ -313,7 +333,7 @@ export async function wash_load(source, sharedMemory = null, imports = {}) {
                 }
                 return val;
             });
-            return instance.exports._start(...finalArgs);
+            return entry(...finalArgs);
         }
     };
 
@@ -366,22 +386,33 @@ export function wash_worker() {
             if (type === "run") {
                 try {
                     let record = shaderInstances.get(shaderId);
+                    const heapBaseFallback = 65536;
+                    const neededBytes = Math.max(
+                        Number(userSize) || 0,
+                        (Number(returnOffset) || 0) + (Number(returnLength) || 0),
+                        65536
+                    );
+
                     if (!record) {
-                        const heapBaseFallback = 65536;
-                        const totalBytes = userSize > 65536 ? userSize : (heapBaseFallback + (userSize || 0));
-                        const reqPages = Math.max(1, Math.ceil(totalBytes / 65536));
+                        const totalBytes = heapBaseFallback + neededBytes;
+                        const reqPages = Math.max(2, Math.ceil(totalBytes / 65536));
                         
                         const workerMemory = new WebAssembly.Memory({ initial: reqPages });
-                        const imports = { env: { memory: workerMemory } };
+                        const wasiProxy = new Proxy({}, {
+                            get: (target, prop) => {
+                                if (prop in target) return target[prop];
+                                return () => 0;
+                            }
+                        });
+                        const imports = {
+                            env: { memory: workerMemory },
+                            wasi_snapshot_preview1: wasiProxy
+                        };
 
                         const res = await WebAssembly.instantiate(module, imports);
                         const instance = (res instanceof WebAssembly.Instance) ? res : (res.instance || res);
                         const memory = instance.exports.memory || workerMemory;
                         const heapBase = instance.exports.__heap_base ? instance.exports.__heap_base.value : heapBaseFallback;
-
-                        const totalPages = Math.ceil((heapBase + (userSize || 0)) / 65536);
-                        const curPages = memory.buffer.byteLength / 65536;
-                        if (totalPages > curPages) memory.grow(totalPages - curPages);
 
                         record = { instance, memory, heapBase };
                         shaderInstances.set(shaderId, record);
@@ -389,14 +420,29 @@ export function wash_worker() {
 
                     const { instance, memory, heapBase } = record;
 
-                    let scratch = userSize > 0 ? userSize : 65536;
+                    // Ensure worker memory has enough pages on EVERY run
+                    const requiredTotal = heapBase + neededBytes;
+                    const curPages = memory.buffer.byteLength / 65536;
+                    const neededPages = Math.ceil(requiredTotal / 65536);
+                    if (neededPages > curPages) {
+                        memory.grow(neededPages - curPages);
+                    }
+
+                    let scratch = neededBytes;
                     const finalArgs = (args || []).map(arg => {
                         const val = resolveWorkerArg(arg, memory, heapBase, scratch);
                         if (typeof arg === "string" || Array.isArray(arg)) scratch += 1024;
                         return val;
                     });
 
-                    const ret = instance.exports._start ? instance.exports._start(...finalArgs) : undefined;
+                    const candidates = [
+                        instance.exports.v_start,
+                        instance.exports.render,
+                        instance.exports._start,
+                        instance.exports.main
+                    ].filter(fn => typeof fn === "function");
+                    const entry = candidates.find(fn => fn.length > 0) || candidates[0];
+                    const ret = entry ? entry(...finalArgs) : undefined;
 
                     let transferBuffer = null;
                     if (returnLength > 0 && memory) {
@@ -452,7 +498,13 @@ export function wash_worker() {
                 return arg;
             });
 
-            const userSize = shader.userSize || (shader.memory ? shader.memory.buffer.byteLength : 0);
+            let userSize = shader.userSize || (shader.memory ? shader.memory.buffer.byteLength : 0);
+            for (const a of args) {
+                if (a && typeof a === "object") {
+                    if (a.userSize) userSize = Math.max(userSize, a.userSize);
+                    if (a.buffer && a.buffer.byteLength) userSize = Math.max(userSize, a.buffer.byteLength);
+                }
+            }
 
             return new Promise((resolve, reject) => {
                 pending.set(id, { resolve, reject });
@@ -479,7 +531,16 @@ export function wash_worker() {
                 return arg;
             });
 
-            const userSize = shader.userSize || (shader.memory ? shader.memory.buffer.byteLength : 0);
+            let userSize = shader.userSize || (shader.memory ? shader.memory.buffer.byteLength : 0);
+            for (const a of args) {
+                if (a && typeof a === "object") {
+                    if (a.userSize) userSize = Math.max(userSize, a.userSize);
+                    if (a.buffer && a.buffer.byteLength) userSize = Math.max(userSize, a.buffer.byteLength);
+                }
+            }
+            if (returnOffset !== undefined && returnLength !== undefined) {
+                userSize = Math.max(userSize, (returnOffset || 0) + (returnLength || 0));
+            }
 
             return new Promise((resolve, reject) => {
                 pending.set(id, { resolve, reject });
