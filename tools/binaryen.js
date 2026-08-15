@@ -1,35 +1,45 @@
-// Binaryen Driver (wasm-opt / optimization passes)
+/**
+ * Laundry - Binaryen Driver (wasm-opt / optimization passes)
+ */
 
 let binaryenInstance = null;
 
-export async function initBinaryen() {
+export async function initBinaryen(vendorPath) {
     if (!binaryenInstance) {
-        if (window.Binaryen) {
+        if (typeof window !== "undefined" && window.Binaryen) {
             binaryenInstance = window.Binaryen;
+        } else if (typeof globalThis !== "undefined" && globalThis.Binaryen) {
+            binaryenInstance = globalThis.Binaryen;
         } else {
-            await new Promise((resolve, reject) => {
-                const script = document.createElement("script");
-                script.src = "./vendor/binaryen.js";
-                script.onload = () => {
-                    binaryenInstance = window.Binaryen;
-                    resolve();
-                };
-                script.onerror = () => reject(new Error("Failed to load Binaryen from ./vendor/binaryen.js"));
-                document.head.appendChild(script);
-            });
+            const scriptUrl = vendorPath || new URL("./vendor/binaryen.js", import.meta.url).href;
+            if (typeof document !== "undefined") {
+                await new Promise((resolve, reject) => {
+                    const script = document.createElement("script");
+                    script.src = scriptUrl;
+                    script.onload = () => {
+                        binaryenInstance = window.Binaryen || globalThis.Binaryen;
+                        resolve();
+                    };
+                    script.onerror = () => reject(new Error(`Failed to load Binaryen from ${scriptUrl}`));
+                    document.head.appendChild(script);
+                });
+            } else if (typeof importScripts === "function") {
+                importScripts(scriptUrl);
+                binaryenInstance = globalThis.Binaryen;
+            }
         }
     }
     return binaryenInstance;
 }
 
 /**
- * Optimizes WASM binary using Binaryen wasm-opt passes
+ * Optimizes WASM binary using Binaryen wasm-opt passes.
  * @param {Uint8Array|ArrayBuffer} wasmBytes 
- * @param {object} options { level: 'O3'|'O2'|'O1'|'Os'|'Oz'|'custom', passes: string[] }
+ * @param {object} options - { level?: 'O1'|'O2'|'O3'|'Os'|'Oz'|'custom', passes?: string[], vendorPath?: string }
  * @returns {Promise<{ optimizedBytes: Uint8Array, originalSize: number, optimizedSize: number, ratio: string, textWat: string }>}
  */
 export async function optimizeWasm(wasmBytes, options = {}) {
-    const Binaryen = await initBinaryen();
+    const Binaryen = await initBinaryen(options.vendorPath);
     const bytes = wasmBytes instanceof Uint8Array ? wasmBytes : new Uint8Array(wasmBytes);
     const originalSize = bytes.byteLength;
 

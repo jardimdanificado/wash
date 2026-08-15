@@ -224,7 +224,19 @@ export function wash_memory(userSize = 65536, heapBase = 65536) {
  * @param {object} imports Extra imports
  */
 export async function wash_load(source, sharedMemory = null, imports = {}) {
-    const finalImports = { ...imports };
+    let actualSource = source;
+    let actualSharedMemory = sharedMemory;
+    let actualImports = imports;
+
+    if (source && typeof source === "object" && !(source instanceof Uint8Array) && !(source instanceof ArrayBuffer) && !(source instanceof WebAssembly.Module)) {
+        if (source.wasm || source.url || source.source) {
+            actualSource = source.wasm || source.url || source.source;
+            actualSharedMemory = source.memory || source.sharedMemory || sharedMemory;
+            actualImports = source.imports || imports;
+        }
+    }
+
+    const finalImports = { ...actualImports };
 
     let memObj = null;
     let heapBase = 65536;
@@ -238,10 +250,10 @@ export async function wash_load(source, sharedMemory = null, imports = {}) {
     });
     finalImports.wasi_snapshot_preview1 = wasiProxy;
 
-    if (sharedMemory) {
-        memObj = sharedMemory.memory ? sharedMemory.memory : sharedMemory;
-        if (sharedMemory.heapBase) heapBase = sharedMemory.heapBase;
-        if (sharedMemory.userSize) userSize = sharedMemory.userSize;
+    if (actualSharedMemory) {
+        memObj = actualSharedMemory.memory ? actualSharedMemory.memory : actualSharedMemory;
+        if (actualSharedMemory.heapBase) heapBase = actualSharedMemory.heapBase;
+        if (actualSharedMemory.userSize) userSize = actualSharedMemory.userSize;
         
         finalImports.env = finalImports.env || {};
         finalImports.env.memory = memObj;
@@ -250,31 +262,31 @@ export async function wash_load(source, sharedMemory = null, imports = {}) {
     let instance;
     let module = null;
 
-    if (typeof source === "string") {
+    if (typeof actualSource === "string") {
         try {
-            const res = await WebAssembly.instantiateStreaming(fetch(source), finalImports);
+            const res = await WebAssembly.instantiateStreaming(fetch(actualSource), finalImports);
             instance = res.instance;
             module = res.module;
         } catch (_) {
-            const res = await fetch(source);
+            const res = await fetch(actualSource);
             const bytes = await res.arrayBuffer();
             const compiled = await WebAssembly.instantiate(bytes, finalImports);
-            instance = compiled.instance;
+            instance = compiled.instance || compiled;
             module = compiled.module;
         }
-    } else if (source instanceof Uint8Array || source instanceof ArrayBuffer) {
-        const bytes = (source instanceof Uint8Array)
-            ? (source.byteOffset === 0 && source.byteLength === source.buffer.byteLength
-                ? source.buffer
-                : source.buffer.slice(source.byteOffset, source.byteOffset + source.byteLength))
-            : source;
-        const res = await WebAssembly.instantiate(bytes, finalImports);
-        instance = res.instance;
-        module = res.module;
-    } else {
-        module = source;
-        const res = await WebAssembly.instantiate(source, finalImports);
+    } else if (actualSource instanceof WebAssembly.Module) {
+        module = actualSource;
+        const res = await WebAssembly.instantiate(actualSource, finalImports);
         instance = (res instanceof WebAssembly.Instance) ? res : (res.instance || res);
+    } else {
+        const bytes = (actualSource instanceof Uint8Array)
+            ? (actualSource.byteOffset === 0 && actualSource.byteLength === actualSource.buffer.byteLength
+                ? actualSource.buffer
+                : actualSource.buffer.slice(actualSource.byteOffset, actualSource.byteOffset + actualSource.byteLength))
+            : actualSource;
+        const compiled = await WebAssembly.instantiate(bytes, finalImports);
+        instance = compiled.instance || compiled;
+        module = compiled.module;
     }
 
     // If module declared and exported its own memory, connect wrapper to it
@@ -589,3 +601,5 @@ export async function wash(url, size, imports = {}) {
         writeString: (str, offset = 0) => shader.writeString(str, offset)
     };
 }
+
+export const wash_shader = wash_load;

@@ -1,32 +1,43 @@
-// WABT Driver (wat2wasm, wasm2wat, wasm-decompile)
-// WebAssembly Binary Toolkit integration
+/**
+ * Laundry - WABT Driver (wat2wasm, wasm2wat, wasm-decompile)
+ */
 
 let wabtInstance = null;
 
-export async function initWabt() {
+export async function initWabt(vendorPath) {
     if (!wabtInstance) {
-        if (!window.WabtModule) {
-            await new Promise((resolve, reject) => {
-                const script = document.createElement("script");
-                script.src = "./vendor/wabt.js";
-                script.onload = resolve;
-                script.onerror = () => reject(new Error("Failed to load WABT from ./vendor/wabt.js"));
-                document.head.appendChild(script);
-            });
+        if (typeof window !== "undefined" && window.WabtModule) {
+            wabtInstance = await window.WabtModule();
+        } else if (typeof globalThis !== "undefined" && globalThis.WabtModule) {
+            wabtInstance = await globalThis.WabtModule();
+        } else {
+            const scriptUrl = vendorPath || new URL("./vendor/wabt.js", import.meta.url).href;
+            if (typeof document !== "undefined") {
+                await new Promise((resolve, reject) => {
+                    const script = document.createElement("script");
+                    script.src = scriptUrl;
+                    script.onload = resolve;
+                    script.onerror = () => reject(new Error(`Failed to load WABT from ${scriptUrl}`));
+                    document.head.appendChild(script);
+                });
+            } else if (typeof importScripts === "function") {
+                importScripts(scriptUrl);
+            }
+            const fn = (typeof window !== "undefined" ? window.WabtModule : globalThis.WabtModule);
+            wabtInstance = await fn();
         }
-        wabtInstance = await window.WabtModule();
     }
     return wabtInstance;
 }
 
 /**
- * Converts WebAssembly Text (WAT) to WASM binary
+ * Converts WebAssembly Text (WAT) to WASM binary (wat2wasm)
  * @param {string} watCode 
  * @param {object} options 
  * @returns {Promise<Uint8Array>}
  */
 export async function watToWasm(watCode, options = {}) {
-    const wabt = await initWabt();
+    const wabt = await initWabt(options.vendorPath);
     const features = {
         exceptions: true,
         mutable_globals: true,
@@ -45,27 +56,27 @@ export async function watToWasm(watCode, options = {}) {
 
     let module;
     try {
-        module = wabt.parseWat("input.wat", watCode, features);
+        module = wabt.parseWat(options.filename || "input.wat", watCode, features);
         const { buffer } = module.toBinary({
             log: false,
             canonicalize_lebs: true,
             relocatable: false,
             write_debug_names: true
         });
-        return buffer;
+        return new Uint8Array(buffer);
     } finally {
         if (module) module.destroy();
     }
 }
 
 /**
- * Converts WASM binary to WebAssembly Text (WAT)
+ * Converts WASM binary to WebAssembly Text (wasm2wat)
  * @param {Uint8Array|ArrayBuffer} wasmBytes 
  * @param {object} options 
  * @returns {Promise<string>}
  */
 export async function wasmToWat(wasmBytes, options = {}) {
-    const wabt = await initWabt();
+    const wabt = await initWabt(options.vendorPath);
     const bytes = wasmBytes instanceof Uint8Array ? wasmBytes : new Uint8Array(wasmBytes);
     const features = {
         exceptions: true,
@@ -100,10 +111,11 @@ export async function wasmToWat(wasmBytes, options = {}) {
 /**
  * Decompiles WASM binary into C-like pseudo-code (wasm-decompile)
  * @param {Uint8Array|ArrayBuffer} wasmBytes 
+ * @param {object} options
  * @returns {Promise<string>}
  */
-export async function wasmDecompile(wasmBytes) {
-    const wabt = await initWabt();
+export async function wasmDecompile(wasmBytes, options = {}) {
+    const wabt = await initWabt(options.vendorPath);
     const bytes = wasmBytes instanceof Uint8Array ? wasmBytes : new Uint8Array(wasmBytes);
     let module;
     try {

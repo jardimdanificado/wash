@@ -268,14 +268,14 @@ footer {
       Universal WebAssembly compute engine & multi-shader shared memory pipeline for high-performance graphics and physics.
     </div>
 
-    <!-- Featured Laundry IDE Card -->
-    <a href="studio/" class="studio-card" style="text-decoration: none;">
+    <!-- Featured Laundry SDK Card -->
+    <div class="studio-card">
       <div>
-        <h2>⚡ LAUNDRY</h2>
-        <p>Compile multiple C shaders in-browser with live syntax highlighting, memory orchestration, and instant ZIP export.</p>
+        <h2>⚡ LAUNDRY SDK</h2>
+        <p>In-browser C &rarr; WASM compilation, Binaryen optimizations (<code>wasm-opt</code>), WABT tools (<code>wat2wasm</code>, <code>wasm2wat</code>, <code>wasm-decompile</code>), and project presets directly in JavaScript.</p>
       </div>
-      <span class="btn">OPEN LAUNDRY &rarr;</span>
-    </a>
+      <span class="btn">laundry.js</span>
+    </div>
 
     <div class="section-title">STANDALONE EXAMPLES</div>
 
@@ -352,20 +352,20 @@ footer {
         <span class="example-tag">SHARED MEM</span>
       </a>
 
-      <a href="examples/10_porffor/" class="example-item">
-        <div class="example-main">
-          <span class="example-title">10. Porffor JS Ahead-of-Time</span>
-          <span class="example-desc">Direct compilation of JavaScript to WebAssembly bytecode with AOT optimization.</span>
-        </div>
-        <span class="example-tag">PORFFOR</span>
-      </a>
-
       <a href="examples/11_multi_language_parallel/" class="example-item">
         <div class="example-main">
-          <span class="example-title">11. Multi-Language Parallel Shaders</span>
+          <span class="example-title">10. Multi-Language Parallel Shaders</span>
           <span class="example-desc">6 languages (C, Zig, AssemblyScript, WAT, V, Rust) running concurrently in parallel workers.</span>
         </div>
         <span class="example-tag">POLYGLOT / PARALLEL</span>
+      </a>
+
+      <a href="examples/12_in_browser_compiler_tools/" class="example-item">
+        <div class="example-main">
+          <span class="example-title">11. In-Browser C Compiler & Tools SDK</span>
+          <span class="example-desc">Live C to WASM compilation, Binaryen wasm-opt, WABT inspection, and ZIP project export.</span>
+        </div>
+        <span class="example-tag">TOOLS SDK</span>
       </a>
     </div>
   </div>

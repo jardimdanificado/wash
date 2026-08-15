@@ -1,1 +1,4 @@
-*.wasm
+node_modules/
+.DS_Store
+examples/07_native_runner/wash_sdl
+examples/07_native_runner/wash_runner

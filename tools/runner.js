@@ -1,8 +1,11 @@
-// Interactive WASM Runner & Inspector
+/**
+ * Laundry - Interactive WASM Runner & Inspector
+ */
 
 /**
- * Inspects WASM binary structure (exports, imports, memory)
+ * Inspects WASM binary structure (exports, imports, memory size)
  * @param {Uint8Array|ArrayBuffer} wasmBytes 
+ * @returns {Promise<{ size: number, imports: WebAssembly.ModuleImportDescriptor[], exports: WebAssembly.ModuleExportDescriptor[] }>}
  */
 export async function inspectWasm(wasmBytes) {
     const bytes = wasmBytes instanceof Uint8Array ? wasmBytes : new Uint8Array(wasmBytes);
@@ -23,6 +26,7 @@ export async function inspectWasm(wasmBytes) {
  * @param {Uint8Array|ArrayBuffer} wasmBytes 
  * @param {object} customImports 
  * @param {function} onLog 
+ * @returns {Promise<{ instance: WebAssembly.Instance, module: WebAssembly.Module, exports: any, memory: WebAssembly.Memory | null }>}
  */
 export async function instantiateWasm(wasmBytes, customImports = {}, onLog = console.log) {
     const bytes = wasmBytes instanceof Uint8Array ? wasmBytes : new Uint8Array(wasmBytes);
