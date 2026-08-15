@@ -38,32 +38,6 @@ console.log("Mandelbrot iter count:", val);
 `
         }
     ],
-    porffor: [
-        {
-            id: 'basic_js',
-            name: 'Hello & Arithmetic (JS)',
-            code: `let a = 15;
-let b = 27;
-let sum = a + b;
-console.log("Sum is:", sum);
-`
-        },
-        {
-            id: 'bitwise_js',
-            name: 'Bitwise Popcount (JS)',
-            code: `function popcount(n) {
-    let count = 0;
-    while (n > 0) {
-        count += (n & 1);
-        n = n >> 1;
-    }
-    return count;
-}
-
-console.log("Popcount(255) =", popcount(255));
-`
-        }
-    ],
     wabt: [
         {
             id: 'add_wat',

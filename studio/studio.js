@@ -1,6 +1,5 @@
 import { wash_memory, wash_load, wash_run, wash_worker, makeWasmImportMemory } from "../wash.js";
 import { PRESETS } from "./presets.js";
-import { compileJsToC } from "./tools/porffor.js";
 import { wasmToWat, watToWasm, wasmDecompile } from "./tools/wabt.js";
 import { optimizeWasm } from "./tools/binaryen.js";
 
@@ -1085,55 +1084,6 @@ async function runBinaryenOptimizationOnActiveFile(level) {
 // Command Palette & Tool Actions Engine (Ctrl+Shift+P / F1)
 // =============================================================================
 const COMMAND_REGISTRY = [
-    // --- PORFFOR ACTIONS ---
-    {
-        id: "porffor_transpile_c",
-        category: "Porffor",
-        catClass: "cat-porffor",
-        title: "Transpile Current JS to C Code",
-        shortcut: "",
-        action: async () => {
-            const activeFile = activeFilePath ? vfs.get(activeFilePath) : null;
-            if (!activeFile) { alert("No file currently open."); return; }
-            try {
-                log(`[PORFFOR] Transpiling ${activeFile.name} to C...`, "info");
-                const code = typeof activeFile.content === "string" ? activeFile.content : "";
-                const res = await compileJsToC(code);
-                const outName = activeFile.name.replace(/\.[^/.]+$/, "") + "_porffor.c";
-                vfsSetFile(outName, res.cCode);
-                openFileInEditor(outName);
-                log(`[OK] Porffor: Generated and opened ${outName}`, "ok");
-            } catch (err) {
-                log(`[ERROR] Porffor: ${err.message}`, "err");
-            }
-        }
-    },
-    {
-        id: "porffor_compile_wasm",
-        category: "Porffor",
-        catClass: "cat-porffor",
-        title: "Compile Current JS directly to WASM Binary",
-        shortcut: "",
-        action: async () => {
-            const activeFile = activeFilePath ? vfs.get(activeFilePath) : null;
-            if (!activeFile) { alert("No file currently open."); return; }
-            try {
-                log(`[PORFFOR] Compiling ${activeFile.name} to WASM binary...`, "info");
-                const code = typeof activeFile.content === "string" ? activeFile.content : "";
-                const res = await compileJsToC(code);
-                // Compile C to WASM using compiler worker
-                const outWasmName = activeFile.name.replace(/\.[^/.]+$/, "") + ".wasm";
-                const xccRes = await compileShader(activeFile.name, res.cCode);
-                const importedBytes = makeWasmImportMemory(xccRes.wasmBytes);
-                vfsSetFile(outWasmName, new Uint8Array(importedBytes), true);
-                compiledShaders[outWasmName] = new Uint8Array(importedBytes);
-                log(`[OK] Porffor+XCC: Generated ${outWasmName} (${importedBytes.byteLength} B)`, "ok");
-            } catch (err) {
-                log(`[ERROR] Porffor WASM: ${err.message}`, "err");
-            }
-        }
-    },
-
     // --- BINARYEN (wasm-opt) ACTIONS ---
     {
         id: "binaryen_opt_o3",

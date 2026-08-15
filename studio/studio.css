@@ -836,11 +836,6 @@ canvas#viewport {
   flex-shrink: 0;
 }
 
-.command-category.cat-porffor {
-  border-color: var(--yellow);
-  color: var(--yellow-bright);
-}
-
 .command-category.cat-binaryen {
   border-color: var(--green);
   color: var(--green-bright);
