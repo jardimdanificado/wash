@@ -136,7 +136,7 @@ if (!isMainThread) {
             customWidth = parseInt(args[++i], 10);
         } else if (arg === "-h" || arg === "--height") {
             customHeight = parseInt(args[++i], 10);
-        } else if (arg === "-i" || arg === "--input") {
+        } else if (arg === "-i" || arg === "--input" || arg === "--image") {
             inputImagePath = args[++i];
         } else if (arg === "-o" || arg === "--output") {
             outputImagePath = args[++i];
@@ -337,13 +337,35 @@ if (!isMainThread) {
         let H = customHeight;
 
         if (loadedInputImage) {
-            if (!W && !H) {
-                W = loadedInputImage.width;
-                H = loadedInputImage.height;
-            } else if (W && !H) {
-                H = loadedInputImage.height;
-            } else if (!W && H) {
-                W = loadedInputImage.width;
+            if (isHeadless && outputImagePath) {
+                // When exporting directly to a file, preserve the native image size unless explicitly overridden
+                if (!W && !H) {
+                    W = loadedInputImage.width;
+                    H = loadedInputImage.height;
+                } else if (W && !H) {
+                    H = Math.round((W / loadedInputImage.width) * loadedInputImage.height);
+                } else if (!W && H) {
+                    W = Math.round((H / loadedInputImage.height) * loadedInputImage.width);
+                }
+            } else {
+                // Interactive terminal mode: fit within available terminal bounds while preserving aspect ratio
+                const maxTermW = termCols;
+                const maxTermH = Math.max(2, (termRows - 2) * 2);
+
+                if (!W && !H) {
+                    const imgW = loadedInputImage.width;
+                    const imgH = loadedInputImage.height;
+                    const scale = Math.min(1.0, maxTermW / imgW, maxTermH / imgH);
+                    W = Math.max(2, Math.round(imgW * scale));
+                    H = Math.max(2, Math.round(imgH * scale));
+                    // Make H even for half-block terminal rendering
+                    if (H % 2 !== 0) H++;
+                } else if (W && !H) {
+                    H = Math.round((W / loadedInputImage.width) * loadedInputImage.height);
+                    if (H % 2 !== 0) H++;
+                } else if (!W && H) {
+                    W = Math.round((H / loadedInputImage.height) * loadedInputImage.width);
+                }
             }
         } else {
             if (!W) W = termCols;
@@ -409,14 +431,14 @@ if (!isMainThread) {
 
             const mem = wash_memory(totalSize);
 
-            // If input image was loaded, pre-populate shader memory with it
-            if (loadedInputImage) {
-                new Uint8Array(mem.buffer, mem.heapBase, W * H * 4).set(framePixels);
-            }
-
             const shader = await wash_load(wasmBytes, mem, {
                 env: { console_log: () => {}, get_random: () => Math.random() }
             });
+
+            // If input image was loaded, pre-populate shader memory with it (after wash_load connects memory & heapBase)
+            if (loadedInputImage) {
+                new Uint8Array(mem.buffer, mem.heapBase, W * H * 4).set(framePixels);
+            }
 
             const candidates = [
                 shader.exports.v_start,
