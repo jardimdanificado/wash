@@ -7,8 +7,6 @@
   "type": "module",
   "exports": {
     ".": "./wash.js",
-    "./laundry": "./laundry.js",
-    "./laundry.js": "./laundry.js",
     "./package.json": "./package.json"
   },
   "bin": {
@@ -23,9 +21,7 @@
     "shaders",
     "graphics",
     "compute",
-    "compiler",
-    "wabt",
-    "binaryen"
+    "shared-memory"
   ],
   "author": "",
   "license": "MIT"

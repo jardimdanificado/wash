@@ -26,38 +26,10 @@ jobs:
         run: |
           make || true
 
-      - name: Build XCC in-browser C compiler
-        run: |
-          git clone https://github.com/tyfkda/xcc.git /tmp/xcc
-          cd /tmp/xcc
-          make wcc
-          rm -rf obj
-          make cc.wasm CC=./wcc
-          cd $GITHUB_WORKSPACE
-
-      - name: Generate Sysroot JSON for in-browser compiler
-        run: |
-          python3 -c "import os, json, base64
-          def build_flat(path, prefix):
-              flat = {}
-              if not os.path.exists(path): return flat
-              for root, dirs, files in os.walk(path):
-                  for f in files:
-                      if f.endswith('.h') or f.endswith('.c'):
-                          full = os.path.join(root, f)
-                          rel = os.path.relpath(full, path)
-                          flat[f'sysroot/{prefix}/{rel}'] = base64.b64encode(open(full, 'rb').read()).decode('utf-8')
-              return flat
-          sysroot = build_flat('/tmp/xcc/include', 'include')
-          os.makedirs('tools', exist_ok=True)
-          with open('tools/sysroot.json', 'w') as f:
-              json.dump(sysroot, f)"
-
       - name: Prepare Deployment Directory
         run: |
           mkdir -p dist
-          cp -r index.html wash.js laundry.js examples tools dist/
-          cp /tmp/xcc/cc.wasm dist/tools/
+          cp -r index.html wash.js bin examples dist/
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
